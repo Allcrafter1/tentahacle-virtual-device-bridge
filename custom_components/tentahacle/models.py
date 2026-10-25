@@ -1,0 +1,139 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+"""Transport-independent bridge models."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from dataclasses import dataclass
+from urllib.parse import urlsplit, urlunsplit
+
+from .const import PROTOCOL_VERSION, DeviceProfile
+
+_BRIDGE_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{2,31}$")
+_ENDPOINT_UID = re.compile(r"^TVB[0-9A-F]{16}$")
+
+
+@dataclass(frozen=True, slots=True)
+class VirtualDevice:
+    """Persistent mapping sent to the bridge."""
+
+    endpoint_uid: str
+    profile: DeviceProfile
+    name: str
+    source_entity_id: str
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        if not _ENDPOINT_UID.fullmatch(self.endpoint_uid):
+            raise ValueError("invalid endpoint UID")
+        validate_device_name(self.name)
+        if "." not in self.source_entity_id:
+            raise ValueError("invalid Home Assistant entity ID")
+
+    def management_payload(self, request_id: str) -> dict[str, object]:
+        """Return a versioned idempotent upsert request."""
+        return {
+            "schema_version": PROTOCOL_VERSION,
+            "request_id": request_id,
+            "operation": "upsert_device",
+            "device": {
+                "uid": self.endpoint_uid,
+                "profile": self.profile.value,
+                "name": self.name,
+                "enabled": self.enabled,
+            },
+        }
+
+
+def validate_device_name(value: object) -> str:
+    """Match the provider's UTF-8 name and control-character constraints."""
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError("invalid device name")
+    if any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in value):
+        raise ValueError("device name contains control characters")
+    if len(value.encode("utf-8")) > 79:
+        raise ValueError("device name exceeds 79 UTF-8 bytes")
+    return value
+
+
+def validate_topic_root(value: str, bridge_id: str) -> str:
+    """Validate a normalized topic prefix accepted by the C bridge."""
+    root = value.strip("/")
+    if not root or "//" in root or any(
+        ord(char) <= 32 or ord(char) == 127 or char in "+#" for char in root
+    ):
+        raise ValueError("invalid MQTT topic root")
+    if len(f"{root}/{bridge_id}".encode()) > 255:
+        raise ValueError("MQTT topic prefix exceeds 255 UTF-8 bytes")
+    return root
+
+
+def validate_bridge_id(value: str) -> str:
+    """Validate a bridge ID used as one MQTT topic component."""
+    value = value.strip().lower()
+    if not _BRIDGE_ID.fullmatch(value):
+        raise ValueError("invalid bridge ID")
+    return value
+
+
+def validate_fritz_url(value: str) -> str:
+    """Validate and normalize the local FRITZ!Box configuration URL."""
+    value = value.strip()
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("invalid FRITZ!Box URL")
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+
+
+def endpoint_uid_from_token(token: str) -> str:
+    """Create the stable 19-character FRITZ UID from a random token."""
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16].upper()
+    return f"TVB{digest}"
+
+
+def bridge_details_from_discovery(topic: str, payload: str | bytes) -> tuple[str, str]:
+    """Validate a retained bridge announcement and return ID and topic root."""
+    parts = topic.strip("/").split("/")
+    if len(parts) < 4 or parts[-2:] != ["bridge", "info"]:
+        raise ValueError("invalid discovery topic")
+    bridge_id = validate_bridge_id(parts[-3])
+    topic_root = "/".join(parts[:-3])
+    if not topic_root:
+        raise ValueError("empty discovery topic root")
+    try:
+        document = json.loads(payload)
+    except (TypeError, ValueError, RecursionError) as err:
+        raise ValueError("invalid discovery payload") from err
+    if not isinstance(document, dict) or document.get("bridge_id") != bridge_id:
+        raise ValueError("discovery identity mismatch")
+    if document.get("schema_version") != PROTOCOL_VERSION:
+        raise ValueError("unsupported discovery schema")
+    return bridge_id, validate_topic_root(topic_root, bridge_id)
+
+
+def profile_for_domain(
+    domain: str, *, color_temperature: bool = False
+) -> DeviceProfile:
+    """Return the default virtual profile for a Home Assistant domain."""
+    if domain in {"switch", "input_boolean"}:
+        return DeviceProfile.SWITCH
+    if domain == "light":
+        return (
+            DeviceProfile.COLOR_TEMPERATURE_LIGHT
+            if color_temperature
+            else DeviceProfile.DIMMABLE_LIGHT
+        )
+    if domain == "cover":
+        return DeviceProfile.COVER
+    if domain == "climate":
+        return DeviceProfile.THERMOSTAT
+    raise ValueError(f"unsupported source domain: {domain}")

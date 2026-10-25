@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+config FREETZ_PACKAGE_TENTAHACLE
+	bool "TentAHAcle - Virtual Device Bridge (experimental)"
+	depends on FREETZ_TYPE_7530_W5
+	depends on FREETZ_TYPE_FIRMWARE_08_2X
+	select FREETZ_PACKAGE_MOSQUITTO
+	# Selecting one client prevents Freetz from forcing its local broker.
+	select FREETZ_PACKAGE_MOSQUITTO_CLIENT_PUB
+	select FREETZ_LIB_libcjson
+	select FREETZ_BUSYBOX___V138_SHA256SUM
+	default n
+	help
+		Provides virtual Smart Home endpoints through the existing FRITZ!OS
+		Smart Home/Mesh stack and connects them to Home Assistant over MQTT.
+
+		Only the explicitly documented FRITZ!Box 7530 and FRITZ!OS build is
+		accepted at runtime. This package does not include AVM software.

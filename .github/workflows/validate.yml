@@ -1,0 +1,90 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: python -m pip install pytest ruff
+      - run: ruff check .
+      - run: pytest
+
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install --yes libcjson-dev libmosquitto-dev lua5.1 python3-pytest
+      - run: /usr/bin/python3 -m pytest -q tests/test_aha_resync.py
+      - run: cc -Wall -Wextra -Werror -fsyntax-only freetz/package/src/virtual_provider.c -pthread
+      - run: cc -Wall -Wextra -Werror -fsyntax-only freetz/package/src/provider_ctl.c
+      - run: cc -Wall -Wextra -Werror -fsyntax-only freetz/package/src/provider_selftest.c
+      - run: cc -Wall -Wextra -Werror -fsyntax-only freetz/package/src/aha_control.c
+      - run: cc -std=gnu11 -Wall -Wextra -Werror tests/provider_ctl_test.c -o /tmp/provider_ctl_test
+      - run: /tmp/provider_ctl_test
+      - run: cc -Wall -Wextra -Werror -fsyntax-only freetz/package/src/mqtt_bridge.c
+      - run: cc -std=c11 -Wall -Wextra -Werror -pedantic -Ifreetz/package/src freetz/package/src/device_registry.c tests/device_registry_test.c -o /tmp/device_registry_test
+      - run: /tmp/device_registry_test
+      - run: cc -Ofast -fno-fast-math -fno-finite-math-only -fstack-protector-strong -std=c11 -Wall -Wextra -Werror -pedantic -Ifreetz/package/src freetz/package/src/device_registry.c freetz/package/src/registry_store.c tests/registry_store_test.c -lcjson -o /tmp/registry_store_test
+      - run: /tmp/registry_store_test
+      - run: cc -std=gnu11 -Wall -Wextra -Werror -Ifreetz/package/src tests/registry_io_test.c freetz/package/src/device_registry.c -lcjson -o /tmp/registry_io_test
+      - run: timeout 10 /tmp/registry_io_test
+      - run: cc -std=c11 -Wall -Wextra -Werror -pedantic -Ifreetz/package/src tests/provider_components_test.c freetz/package/src/provider_events.c -o /tmp/provider_components_test
+      - run: /tmp/provider_components_test
+      - run: cc -std=c11 -Wall -Wextra -Werror -pedantic -Ifreetz/package/src tests/provider_transport_test.c freetz/package/src/provider_transport.c -o /tmp/provider_transport_test
+      - run: /tmp/provider_transport_test
+      - run: cc -std=c11 -Wall -Wextra -Werror -pedantic -Ifreetz/package/src tests/provider_catalog_sync_test.c freetz/package/src/provider_catalog_sync.c -o /tmp/provider_catalog_sync_test
+      - run: /tmp/provider_catalog_sync_test
+      - run: cc -Ofast -fno-fast-math -fno-finite-math-only -fstack-protector-strong -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Ifreetz/package/src freetz/package/src/device_registry.c freetz/package/src/registry_store.c tests/mqtt_bridge_test.c -lcjson -lpthread -lm -Wl,--gc-sections -o /tmp/mqtt_bridge_test
+      - run: /tmp/mqtt_bridge_test
+      - run: cc -Ofast -fno-fast-math -fno-finite-math-only -fstack-protector-strong -std=gnu11 -Wall -Wextra -Werror -fPIC -shared freetz/package/src/virtual_provider.c freetz/package/src/provider_profiles.c freetz/package/src/provider_events.c freetz/package/src/provider_transport.c freetz/package/src/provider_catalog_sync.c freetz/package/src/device_registry.c -ldl -pthread -Wl,-z,relro,-z,now,-z,defs -o /tmp/virtual_provider.so
+      - run: cc -std=gnu11 -Wall -Wextra -Werror tests/provider_failure_regression_test.c freetz/package/src/provider_profiles.c freetz/package/src/provider_events.c freetz/package/src/provider_transport.c freetz/package/src/provider_catalog_sync.c freetz/package/src/device_registry.c -ldl -pthread -o /tmp/provider_failure_regression_test
+      - run: /tmp/provider_failure_regression_test
+      - run: cc -std=gnu11 -Wall -Wextra -Werror freetz/package/src/provider_selftest.c -o /tmp/provider_selftest
+      - run: cc -std=gnu11 -Wall -Wextra -Werror tests/provider_catalog_integration_test.c -ldl -o /tmp/provider_catalog_integration_test
+      - run: cc -std=gnu11 -Wall -Wextra -Werror -fPIC -shared tests/provider_catalog_converter_mock.c -o /tmp/provider_catalog_converter_mock.so
+      - run: AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_CONTROL_PATH=/tmp/tvb-provider-catalog.sock LD_PRELOAD=/tmp/virtual_provider.so:/tmp/provider_catalog_converter_mock.so /tmp/provider_catalog_integration_test
+      - run: cc -std=gnu11 -Wall -Wextra -Werror tests/provider_startup_test.c -ldl -o /tmp/provider_startup_test
+      - run: cc -std=gnu11 -Wall -Wextra -Werror -fPIC -shared tests/provider_thread_failure.c -o /tmp/provider_thread_failure.so
+      - run: cc -std=gnu11 -Wall -Wextra -Werror -fPIC -shared tests/provider_missing_symbols.c -ldl -o /tmp/provider_missing_symbols.so
+      - run: LD_PRELOAD=/tmp/provider_missing_symbols.so /tmp/provider_startup_test /tmp/virtual_provider.so symbols
+      - run: /tmp/provider_startup_test /tmp/virtual_provider.so long
+      - run: /tmp/provider_startup_test /tmp/virtual_provider.so bind
+      - run: LD_PRELOAD=/tmp/provider_thread_failure.so /tmp/provider_startup_test /tmp/virtual_provider.so thread
+      - run: TVB_PROVIDER_GOLDEN=tests/fixtures/provider-v0.1.4-dynamic.hex AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_CONTROL_PATH=/tmp/tvb-provider-dynamic.sock LD_PRELOAD=/tmp/virtual_provider.so /tmp/provider_selftest
+      - run: AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_LEGACY=1 AHA_VIRTUAL_HANFUN_EXPERIMENT=1 AHA_VIRTUAL_CONTROL_PATH=/tmp/tvb-provider-legacy.sock LD_PRELOAD=/tmp/virtual_provider.so /tmp/provider_selftest
+
+  c-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install --yes libcjson-dev libmosquitto-dev
+      - run: sh tests/run_c_sanitizers.sh
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate the custom integration with hassfest
+        run: >-
+          docker run --rm
+          -v "${{ github.workspace }}:/github/workspace"
+          ghcr.io/home-assistant/hassfest
+          --integration-path
+          /github/workspace/custom_components/tentahacle
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@885037da508419fd08c13515967aec868dfdee2d
+        with:
+          category: integration

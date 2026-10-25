@@ -1,0 +1,104 @@
+{
+  "title": "TentAHAcle - Virtual Device Bridge",
+  "common": {
+    "bridge_entry_title": "{bridge_id} – use + to add a device",
+    "bridge_device_name": "Open the FRITZ!OS interface",
+    "bridge_ready_title": "TentAHAcle - Virtual Device Bridge is ready",
+    "bridge_ready_message": "Open **Settings → Devices & services → TentAHAcle - Virtual Device Bridge** and use the **+** in the top-right corner to add a virtual FRITZ! device. Then open [FRITZ!OS]({fritz_url}) to assign or configure it.",
+    "device_created_title": "Virtual FRITZ! device created",
+    "device_created_message": "**{fritz_name}** has been created. Open [FRITZ!OS]({fritz_url}) now to assign or configure the virtual device. Add more virtual devices through the **+** in the top-right corner of the bridge entry."
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect an MQTT bridge",
+        "description": "Use the same bridge ID configured in the Freetz package.",
+        "data": {
+          "bridge_id": "Bridge ID",
+          "topic_root": "MQTT topic root",
+          "fritz_url": "FRITZ!Box configuration URL"
+        }
+      },
+      "reconfigure": {
+        "title": "Configure bridge",
+        "description": "The FRITZ!Box URL opens the Smart Home interface used to assign and configure virtual devices.",
+        "data": {
+          "topic_root": "MQTT topic root",
+          "fritz_url": "FRITZ!Box configuration URL"
+        }
+      },
+      "mqtt_confirm": {
+        "title": "Add discovered bridge",
+        "description": "Connect the discovered TentAHAcle - Virtual Device Bridge {bridge_id}."
+      }
+    },
+    "error": {
+      "invalid_bridge_id": "Use 3–32 lowercase letters, numbers, underscores or hyphens.",
+      "invalid_fritz_url": "Enter an HTTP or HTTPS URL without credentials, query parameters or fragments.",
+      "invalid_topic_root": "Enter an MQTT prefix without spaces, empty segments or +/# (at most 255 UTF-8 bytes including the bridge ID)."
+    },
+    "abort": {
+      "already_configured": "This bridge is already configured.",
+      "invalid_discovery": "The MQTT bridge announcement is invalid or unsupported.",
+      "reconfigure_successful": "The bridge configuration was updated."
+    }
+  },
+  "config_subentries": {
+    "device": {
+      "title": "Add virtual FRITZ! device",
+      "entry_type": "Virtual FRITZ! device",
+      "initiate_flow": {
+        "user": "Add virtual FRITZ! device",
+        "reconfigure": "Reconfigure virtual FRITZ! device"
+      },
+      "step": {
+        "user": {
+          "title": "Add virtual device",
+          "description": "Choose the Home Assistant entity to represent as a virtual FRITZ! device.",
+          "data": {
+            "source_entity_id": "Home Assistant entity"
+          }
+        },
+        "details": {
+          "title": "Confirm virtual device",
+          "description": "The best matching profile is selected automatically. If you prefer another profile, select it here manually. In the next step, you can assign or configure the virtual device in the FRITZ!OS interface.",
+          "data": {
+            "profile": "FRITZ device profile",
+            "fritz_name": "Name in FRITZ!OS"
+          }
+        },
+        "reconfigure": {
+          "title": "Rebind virtual device",
+          "description": "Changing the source entity or name keeps the FRITZ identity and existing assignments.",
+          "data": {
+            "source_entity_id": "Home Assistant entity",
+            "fritz_name": "Name in FRITZ!OS"
+          }
+        }
+      },
+      "create_entry": {
+        "default": "**{fritz_name}** was created successfully. Open the [FRITZ!OS interface]({fritz_url}) now to assign or configure the virtual device."
+      },
+      "error": {
+        "already_mapped": "This Home Assistant entity already has a virtual FRITZ device on this bridge.",
+        "incompatible_profile": "The entity does not support this persistent FRITZ profile.",
+        "invalid_name": "Enter a name without leading or trailing spaces and containing at most 79 UTF-8 bytes.",
+        "source_entity_missing": "The selected Home Assistant entity does not exist."
+      },
+      "abort": {
+        "source_entity_missing": "The selected Home Assistant entity no longer exists."
+      }
+    }
+  },
+  "selector": {
+    "profile": {
+      "options": {
+        "switch": "Switch/socket",
+        "dimmable_light": "Dimmable light",
+        "color_temperature_light": "Color-temperature light",
+        "cover": "Blind/cover",
+        "thermostat": "Radiator thermostat"
+      }
+    }
+  }
+}

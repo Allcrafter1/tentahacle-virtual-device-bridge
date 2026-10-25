@@ -1,0 +1,20 @@
+{
+  "domain": "tentahacle",
+  "name": "TentAHAcle - Virtual Device Bridge",
+  "codeowners": [
+    "@Allcrafter1"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "mqtt"
+  ],
+  "documentation": "https://github.com/Allcrafter1/tentahacle-virtual-device-bridge",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues",
+  "mqtt": [
+    "tentahacle/+/bridge/info"
+  ],
+  "requirements": [],
+  "version": "0.2.0-beta.1"
+}

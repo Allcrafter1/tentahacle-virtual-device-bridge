@@ -1,0 +1,256 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT OR Apache-2.0
+
+DAEMON=tentahacle
+DAEMON_LONG_NAME="TentAHAcle - Virtual Device Bridge"
+PID_FILE=/var/run/tentahacle/mqtt.pid
+WATCHDOG_PID=/var/run/tentahacle/watchdog.pid
+. /etc/init.d/modlibrc
+
+EXPECTED_AHA_SHA256='4e85494198125132876aafa0cb88cf2d873266904b7098b6e4213c3ce8a38aaf'
+PROVIDER=/usr/lib/tentahacle/virtual_provider.so
+CONTROL=/usr/bin/tentahacle-ctl
+BRIDGE=/usr/sbin/tentahacle-mqtt-bridge
+MQTT_CONFIG=/var/run/tentahacle/mqtt.conf
+BRIDGE_PID=$PID_FILE
+restart_requested=no
+
+write_mqtt_config() {
+	mkdir -p /var/run/tentahacle || return 1
+	chmod 700 /var/run/tentahacle
+	{
+		printf 'host=%s\n' "$TENTAHACLE_MQTT_HOST"
+		printf 'port=%s\n' "$TENTAHACLE_MQTT_PORT"
+		printf 'username=%s\n' "$TENTAHACLE_MQTT_USERNAME"
+		printf 'password=%s\n' "$TENTAHACLE_MQTT_PASSWORD"
+		printf 'client_id=tentahacle-%s\n' "$TENTAHACLE_BRIDGE_ID"
+		printf 'topic_prefix=tentahacle/%s\n' "$TENTAHACLE_BRIDGE_ID"
+		printf 'control_socket=/var/tmp/aha-virtual-provider.ctl\n'
+		printf 'registry_file=/tmp/flash/tentahacle/registry.json\n'
+		printf 'bridge_id=%s\n' "$TENTAHACLE_BRIDGE_ID"
+		printf 'persist_command=/usr/bin/modsave flash\n'
+		printf 'aha_control=/usr/bin/tentahacle-aha-control\n'
+	} >"$MQTT_CONFIG"
+	chmod 600 "$MQTT_CONFIG"
+}
+
+wait_for_aha_stop() {
+	for unused in 1 2 3 4 5 6 7 8 9 10; do
+		pidof aha >/dev/null 2>&1 || return 0
+		sleep 1
+	done
+	return 1
+}
+
+wait_for_provider() {
+	for unused in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45; do
+		[ -S /var/tmp/aha-virtual-provider.ctl ] &&
+			"$CONTROL" GET 2>/dev/null | grep -q '"connected":true' && return 0
+		sleep 1
+	done
+	return 1
+}
+
+start_stock_aha() {
+	rm -f /var/tmp/homeauto /var/tmp/me_avm_home_external.ctl /var/tmp/aha-virtual-provider.ctl
+	/etc/init.d/S78-aha start
+}
+
+start_virtual_aha() {
+	rm -f /var/tmp/homeauto /var/tmp/me_avm_home_external.ctl /var/tmp/aha-virtual-provider.ctl
+	if [ "$TENTAHACLE_DEBUG" = yes ]; then
+		AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_HANFUN_EXPERIMENT=1 AHA_VIRTUAL_DEBUG=1 \
+			LD_PRELOAD="$PROVIDER" /usr/bin/aha >>/var/log/tentahacle-aha.log 2>&1 &
+	else
+		AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_HANFUN_EXPERIMENT=1 \
+			LD_PRELOAD="$PROVIDER" /usr/bin/aha >>/var/log/tentahacle-aha.log 2>&1 &
+	fi
+	wait_for_provider
+}
+
+recover_virtual_aha() {
+	old_pid="$(pidof aha 2>/dev/null)"
+	[ -z "$old_pid" ] || kill $old_pid
+	wait_for_aha_stop || {
+		echo "aha did not stop; refusing to force it" >&2
+		return 1
+	}
+	start_virtual_aha && return 0
+	echo "virtual provider did not connect; restoring stock aha" >&2
+	old_pid="$(pidof aha 2>/dev/null)"
+	[ -z "$old_pid" ] || kill $old_pid
+	wait_for_aha_stop || return 1
+	start_stock_aha
+	return 1
+}
+
+watchdog() {
+	trap 'exit 0' INT TERM
+	failures=0
+	while sleep 5; do
+		if "$CONTROL" GET 2>/dev/null | grep -q '"connected":true'; then
+			failures=0
+			continue
+		fi
+		failures=$((failures + 1))
+		[ "$failures" -ge 3 ] || continue
+		echo "$(date): provider health check failed three times; restarting aha" >&2
+		if recover_virtual_aha; then
+			echo "$(date): virtual provider recovered" >&2
+		else
+			echo "$(date): virtual provider recovery failed; retrying later" >&2
+			sleep 30
+		fi
+		failures=0
+	done
+}
+
+start_watchdog() {
+	"$0" watchdog >>/var/log/tentahacle-mqtt.log 2>&1 &
+	echo $! >"$WATCHDOG_PID"
+}
+
+start_bridge() {
+	LD_LIBRARY_PATH=/usr/lib/freetz "$BRIDGE" "$MQTT_CONFIG" >>/var/log/tentahacle-mqtt.log 2>&1 &
+	bridge_pid=$!
+	echo "$bridge_pid" >"$BRIDGE_PID"
+	sleep 1
+	if [ -r "/proc/$bridge_pid/cmdline" ] &&
+		grep -q 'tentahacle-mqtt-bridge' "/proc/$bridge_pid/cmdline"; then
+		return 0
+	fi
+	rm -f "$BRIDGE_PID"
+	echo "MQTT bridge exited during startup; restoring stock aha" >&2
+	virtual_pid="$(pidof aha 2>/dev/null)"
+	[ -z "$virtual_pid" ] || kill $virtual_pid
+	wait_for_aha_stop || return 1
+	start_stock_aha
+	return 1
+}
+
+stop_watchdog() {
+	[ -r "$WATCHDOG_PID" ] || return 0
+	watchdog_pid="$(cat "$WATCHDOG_PID")"
+	case "$watchdog_pid" in
+		*[!0-9]*|"")
+			rm -f "$WATCHDOG_PID"
+			return 0
+			;;
+	esac
+	if [ ! -r "/proc/$watchdog_pid/cmdline" ] ||
+		! grep -q 'rc.tentahacle' "/proc/$watchdog_pid/cmdline" ||
+		! grep -q 'watchdog' "/proc/$watchdog_pid/cmdline"; then
+		rm -f "$WATCHDOG_PID"
+		return 0
+	fi
+	kill "$watchdog_pid" 2>/dev/null
+	for unused in 1 2 3 4 5 6 7 8 9 10; do
+		if [ ! -r "/proc/$watchdog_pid/cmdline" ] ||
+			! grep -q 'rc.tentahacle' "/proc/$watchdog_pid/cmdline"; then
+			rm -f "$WATCHDOG_PID"
+			return 0
+		fi
+		sleep 1
+	done
+	echo "provider watchdog did not stop" >&2
+	return 1
+}
+
+stop_bridge() {
+	[ -r "$BRIDGE_PID" ] || return 0
+	bridge_pid="$(cat "$BRIDGE_PID")"
+	case "$bridge_pid" in
+		*[!0-9]*|"")
+			rm -f "$BRIDGE_PID"
+			return 0
+			;;
+	esac
+	if [ ! -r "/proc/$bridge_pid/cmdline" ] ||
+		! grep -q 'tentahacle-mqtt-bridge' "/proc/$bridge_pid/cmdline"; then
+		rm -f "$BRIDGE_PID"
+		return 0
+	fi
+	kill "$bridge_pid" 2>/dev/null
+	for unused in 1 2 3 4 5 6 7 8 9 10; do
+		if [ ! -r "/proc/$bridge_pid/cmdline" ] ||
+			! grep -q 'tentahacle-mqtt-bridge' "/proc/$bridge_pid/cmdline"; then
+			rm -f "$BRIDGE_PID"
+			return 0
+		fi
+		sleep 1
+	done
+	echo "MQTT bridge did not stop" >&2
+	return 1
+}
+
+start() {
+	actual_sha="$(sha256sum /usr/bin/aha 2>/dev/null | sed 's/ .*//')"
+	if [ "$actual_sha" != "$EXPECTED_AHA_SHA256" ]; then
+		echo "Unsupported /usr/bin/aha fingerprint: $actual_sha" >&2
+		return 1
+	fi
+	[ -n "$TENTAHACLE_MQTT_HOST" ] || {
+		echo "MQTT broker host is missing" >&2
+		return 1
+	}
+	case "$TENTAHACLE_MQTT_PORT" in
+		""|*[!0-9]*)
+			echo "MQTT port must be a number between 1 and 65535" >&2
+			return 1
+			;;
+	esac
+	[ "$TENTAHACLE_MQTT_PORT" -ge 1 ] &&
+		[ "$TENTAHACLE_MQTT_PORT" -le 65535 ] || {
+		echo "MQTT port must be a number between 1 and 65535" >&2
+		return 1
+	}
+	case "$TENTAHACLE_BRIDGE_ID" in
+		""|?|??|*[!a-z0-9_-]*)
+			echo "Bridge ID must contain 3-32 lowercase letters, digits, underscore or hyphen" >&2
+			return 1
+			;;
+	esac
+	[ "${#TENTAHACLE_BRIDGE_ID}" -le 32 ] || {
+		echo "Bridge ID must contain 3-32 lowercase letters, digits, underscore or hyphen" >&2
+		return 1
+	}
+	write_mqtt_config || return 1
+
+	recover_virtual_aha || return 1
+
+	start_bridge || return 1
+	start_watchdog
+}
+
+stop() {
+	stop_watchdog || return 1
+	stop_bridge || return 1
+	# A restart replaces virtual AHA directly in start(). Starting stock AHA
+	# here briefly removes virtual targets while controllers restore screens.
+	[ "$restart_requested" = yes ] && return 0
+	if [ -S /var/tmp/aha-virtual-provider.ctl ]; then
+		virtual_pid="$(pidof aha 2>/dev/null)"
+		[ -z "$virtual_pid" ] || kill $virtual_pid
+		wait_for_aha_stop || return 1
+		start_stock_aha
+	fi
+}
+
+case "$1" in
+	""|load)
+		modreg cgi "$DAEMON" "$DAEMON_LONG_NAME"
+		modreg daemon "$DAEMON"
+		modlib_start "$TENTAHACLE_ENABLED"
+		;;
+	unload)
+		modunreg daemon "$DAEMON"
+		modunreg cgi "$DAEMON"
+		modlib_stop
+		;;
+	start) modlib_start ;;
+	stop) modlib_stop ;;
+	restart) restart_requested=yes; modlib_stop && modlib_start ;;
+	status) modlib_status ;;
+	watchdog) watchdog ;;
+	*) echo "Usage: $0 [load|unload|start|stop|restart|status]" >&2; exit 1 ;;
+esac

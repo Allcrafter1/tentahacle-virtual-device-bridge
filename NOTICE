@@ -1,0 +1,25 @@
+TentAHAcle - Virtual Device Bridge
+
+Copyright 2026 TentAHAcle - Virtual Device Bridge contributors
+
+This is an independent community project and is not affiliated with, endorsed
+by, sponsored by or supported by FRITZ! GmbH. Referenced product names and
+marks are used solely to describe compatibility. See TRADEMARKS.md.
+
+FRITZ!, FRITZ!Box and FRITZ!Smart are trademarks of their respective owner.
+They are used only to identify compatible products and interfaces.
+
+This repository does not contain or distribute manufacturer firmware,
+modified firmware images or proprietary manufacturer executables. A user who
+chooses to build a modified firmware image must obtain the original firmware
+and perform the build locally under the applicable terms.
+
+Freetz-NG is a separate GPL-2.0 project:
+https://github.com/Freetz-NG/freetz-ng
+
+The MQTT bridge dynamically links against Eclipse Mosquitto's client library.
+Mosquitto is available under EPL-2.0 OR EDL-1.0/BSD-3-Clause terms:
+https://github.com/eclipse-mosquitto/mosquitto
+
+Home Assistant is a separate project distributed under Apache-2.0:
+https://github.com/home-assistant/core

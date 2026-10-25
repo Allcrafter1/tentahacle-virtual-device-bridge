@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+$(call PKG_INIT_BIN, 0.2.0-beta.1)
+$(PKG)_SOURCE:=$(pkg)-$($(PKG)_VERSION).tar.gz
+$(PKG)_HASH:=@SOURCE_HASH@
+$(PKG)_SITE:=https://invalid.example.invalid/source-only-package
+
+$(PKG)_DEPENDS_ON += mosquitto libcjson
+$(PKG)_STARTLEVEL:=90
+
+# TARGET_CFLAGS may contain -Ofast: preserve finite-number validation before
+# floating-point casts. The pinned uClibc has no FORTIFY implementation.
+$(PKG)_CFLAGS:=-fno-fast-math -fno-finite-math-only -fstack-protector-strong -Werror
+$(PKG)_LDFLAGS:=-Wl,-z,relro,-z,now,-z,defs
+
+$(PKG)_PROVIDER:=$($(PKG)_DIR)/virtual_provider.so
+$(PKG)_CONTROL:=$($(PKG)_DIR)/provider_ctl
+$(PKG)_AHA_CONTROL:=$($(PKG)_DIR)/tentahacle-aha-control
+$(PKG)_BRIDGE:=$($(PKG)_DIR)/tentahacle-mqtt-bridge
+
+$(PKG)_TARGET_PROVIDER:=$($(PKG)_DEST_DIR)/usr/lib/tentahacle/virtual_provider.so
+$(PKG)_TARGET_CONTROL:=$($(PKG)_DEST_DIR)/usr/bin/tentahacle-ctl
+$(PKG)_TARGET_AHA_CONTROL:=$($(PKG)_DEST_DIR)/usr/bin/tentahacle-aha-control
+$(PKG)_TARGET_BRIDGE:=$($(PKG)_DEST_DIR)/usr/sbin/tentahacle-mqtt-bridge
+
+$(PKG_SOURCE_DOWNLOAD)
+$(PKG_UNPACKED)
+$(PKG_CONFIGURED_NOP)
+
+$($(PKG)_PROVIDER): $($(PKG)_DIR)/.configured
+	$(TARGET_CC) $(TARGET_CFLAGS) $(TENTAHACLE_CFLAGS) -std=gnu11 -Wall -Wextra -fPIC -shared \
+		-o $@ $(TENTAHACLE_DIR)/virtual_provider.c \
+		$(TENTAHACLE_DIR)/provider_profiles.c $(TENTAHACLE_DIR)/provider_events.c \
+		$(TENTAHACLE_DIR)/provider_transport.c \
+		$(TENTAHACLE_DIR)/provider_catalog_sync.c \
+		$(TENTAHACLE_DIR)/device_registry.c -ldl -pthread $(TENTAHACLE_LDFLAGS)
+
+$($(PKG)_CONTROL): $($(PKG)_DIR)/.configured
+	$(TARGET_CC) $(TARGET_CFLAGS) $(TENTAHACLE_CFLAGS) -std=gnu11 -Wall -Wextra \
+		-o $@ $(TENTAHACLE_DIR)/provider_ctl.c $(TARGET_LDFLAGS) $(TENTAHACLE_LDFLAGS)
+
+$($(PKG)_AHA_CONTROL): $($(PKG)_DIR)/.configured
+	$(TARGET_CC) $(TARGET_CFLAGS) $(TENTAHACLE_CFLAGS) -std=gnu11 -Wall -Wextra \
+		-o $@ $(TENTAHACLE_DIR)/aha_control.c -ldl $(TARGET_LDFLAGS) $(TENTAHACLE_LDFLAGS)
+
+$($(PKG)_BRIDGE): $($(PKG)_DIR)/.configured \
+		$(MOSQUITTO_LIB_BINARY) $(LIBCJSON_STAGING_BINARY)
+	$(TARGET_CC) $(TARGET_CFLAGS) $(TENTAHACLE_CFLAGS) -std=gnu11 -Wall -Wextra \
+		-DTVB_VERSION=\"$(TENTAHACLE_VERSION)\" \
+		-I$(MOSQUITTO_DIR)/include -o $@ $(TENTAHACLE_DIR)/mqtt_bridge.c \
+		$(TENTAHACLE_DIR)/device_registry.c $(TENTAHACLE_DIR)/registry_store.c \
+		-L$(MOSQUITTO_DIR)/lib -lmosquitto -lcjson -lpthread $(TARGET_LDFLAGS) \
+		-Wl,--dynamic-linker=/usr/lib/freetz/ld-uClibc.so.1 $(TENTAHACLE_LDFLAGS)
+
+$($(PKG)_TARGET_PROVIDER): $($(PKG)_PROVIDER)
+	$(INSTALL_FILE)
+
+$($(PKG)_TARGET_CONTROL): $($(PKG)_CONTROL)
+	$(INSTALL_BINARY_STRIP)
+
+$($(PKG)_TARGET_AHA_CONTROL): $($(PKG)_AHA_CONTROL)
+	$(INSTALL_BINARY_STRIP)
+
+$($(PKG)_TARGET_BRIDGE): $($(PKG)_BRIDGE)
+	$(INSTALL_BINARY_STRIP)
+
+$(pkg):
+
+$(pkg)-precompiled: $($(PKG)_TARGET_PROVIDER) $($(PKG)_TARGET_CONTROL) $($(PKG)_TARGET_AHA_CONTROL) $($(PKG)_TARGET_BRIDGE)
+
+$(pkg)-clean:
+	$(RM) $($(PKG)_PROVIDER) $($(PKG)_CONTROL) $($(PKG)_AHA_CONTROL) $($(PKG)_BRIDGE)
+
+$(pkg)-uninstall:
+	$(RM) $($(PKG)_TARGET_PROVIDER) $($(PKG)_TARGET_CONTROL) $($(PKG)_TARGET_AHA_CONTROL) $($(PKG)_TARGET_BRIDGE)
+
+$(PKG_FINISH)

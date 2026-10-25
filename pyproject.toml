@@ -1,0 +1,32 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "ANN202",
+  "ARG001",
+  "C901",
+  "COM812",
+  "CPY001",
+  "D105",
+  "D107",
+  "D203",
+  "D213",
+  "EM101",
+  "EM102",
+  "PLR0911",
+  "PLR0912",
+  "PLR2004",
+  "TC002",
+  "TC003",
+  "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN201", "D103", "FBT001", "INP001", "PT011", "S101"]
