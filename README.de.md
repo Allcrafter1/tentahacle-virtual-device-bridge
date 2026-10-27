@@ -154,17 +154,29 @@ Bekannte Grenzen des aktuellen Kandidaten:
 ### Projektstand und Mitmachen
 
 Das Projekt ist funktionierende experimentelle Software und noch kein fertiges
-Produkt. Das exakte aus Commit `ae76886` gebaute Image `0.3.0-rc6` ist auf der
-beschriebenen Labor-7530 zusammen mit der passenden Home-Assistant-Komponente
-installiert. Alle neun aktuellen Geräteidentitäten blieben erhalten, der
-alternative Boot-Slot 0 startet sauber und die 6690 meldet alle virtuellen
-Geräte wieder als anwesend. RC6 unterscheidet einen antwortenden Provider mit
-vorübergehend getrennter nativer Verbindung von einem hängenden Kontrollkanal.
-Ein wiederholtes Update eines FRITZ!Smart Control 440 von 05.38 auf 05.45 lief
-ohne AHA-Neustart durch; echte Fehlerpfade behalten ihre begrenzte Recovery.
-Die genauen Nachweise stehen in der Release-Checkliste. Besonders hilfreich
-bleiben längere Praxistests und Prüfungen auf zusätzlicher unterstützter
-Hardware.
+Produkt. Das exakte aus Commit `add07f9166a8dd059aec556bf5236d551e0d04fe`
+gebaute Image `0.3.0-rc7` ist dauerhaft in Boot-Slot 1 der beschriebenen
+Labor-7530 installiert; RC6 bleibt in Slot 0 als Rückfallversion erhalten. In
+Home Assistant ist das passende RC7-Manifest mit dem unveränderten Hub und
+allen elf Geräte-Untereinträgen geladen. Die Registry mit elf Geräten blieb
+über zwei kontrollierte Neustarts unverändert. Nach dem zweiten Neustart wurde
+der Dienst nach etwa 110 Sekunden ohne Eingriff wieder gesund; anschließend
+waren 60 von 60 Provider-Kontrollabfragen erfolgreich.
+
+RC7 behebt einen nach RC6 gefundenen zweiten Wartungsfehler: Ein blockierender
+nativer `cR/TX`-Schreibvorgang konnte den globalen Zustands- und Kontroll-Mutex
+des Providers so lange halten, dass der Watchdog einen gesunden AHA-Prozess als
+ausgefallenen Kontrollkanal einstufte. Der Provider dupliziert jetzt den
+zugeordneten Deskriptor, prüft nach dem entsperrten Schreibvorgang dessen
+Verbindungsepoche, serialisiert native Schreibvorgänge separat und verschiebt
+Katalog-Injektionen bis zu deren Abschluss. Ein deterministischer Test mit
+blockiertem Schreibvorgang deckt diesen Mechanismus ab. Ein echtes erneutes
+Anlernen oder Controller-Firmwareupdate unter RC7 wurde **noch nicht physisch
+bestätigt**. Das frühere Update von 05.38 auf 05.45 unter RC6 ist deshalb nur
+historischer Nachweis und keine Bestätigung des RC7-Fixes. Die genauen Nachweise
+und diese verbleibende Prüfung stehen in der Release-Checkliste. Besonders
+hilfreich bleiben dieser physische Wartungs-Canary, längere Praxistests und
+Prüfungen auf zusätzlicher unterstützter Hardware.
 Nachvollziehbare Ergebnisse bitte über
 [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues) melden.
 

@@ -9,18 +9,23 @@ open-ended feature backlog.
 
 | Layer | Observed status |
 |---|---|
-| Running 7530 | TentAHAcle `0.3.0-rc6` built from `ae76886` is installed on boot slot 0; runtime hashes match the audited image; service, provider, watchdog and MQTT bridge are running |
-| Running Home Assistant | Matching `0.3.0-rc6` component is loaded with the unchanged hub and nine device subentries |
-| Exact artifact | `TentAHAcle-0.3.0-rc6-7530-08.25.image`, SHA-256 `07a4bc9bedba8d7b856cfa86c948dd478b75f284388d555511359b630b41946c` |
-| Live smoke evidence | Alternate-slot boot, delayed asynchronous provider startup, broker authentication, HA restart and the unchanged nine-device registry passed. Registry SHA `e97d5fb48dea651b4e6e34b5f524f6f36c2f06e4e88fa85b8676b02ffef02591` and remote IDs 456–464 survived; the 6690 reports all nine virtual parents present |
-| Automated evidence | Exact built commit: 300 Python tests passed and one optional Lua 5.1 test skipped. Ruff, shell/JSON/packaging checks, strict native integration tests, focused ASan/UBSan backpressure regression and the ARM GCC 13.4/Freetz build passed. The broader RC4 sanitizer/fuzz/fault evidence covers unchanged paths; LeakSanitizer/ThreadSanitizer are not claimed for this exact head |
-| Physical evidence for this exact source | Passed: the exact RC6 watchdog behavior allowed a directly paired 440 firmware update from 05.38 to 05.45 to finish without an AHA restart; all nine virtual devices returned connected. The earlier first-press, brightness, Kelvin, cover and saved-placement canaries remain applicable to unchanged paths |
+| Running 7530 | TentAHAcle `0.3.0-rc7` built from `add07f9166a8dd059aec556bf5236d551e0d04fe` is installed persistently on boot slot 1; RC6 remains in slot 0 for rollback. A controlled second reboot succeeded and the service became healthy without intervention after about 110 seconds |
+| Running Home Assistant | Matching `0.3.0-rc7` manifest is loaded with the unchanged hub and eleven device subentries |
+| Exact artifact | `TentAHAcle-0.3.0-rc7-7530-08.25.image`, SHA-256 `120afbf511c5be9fa687daa3340b4b210e585a6b87016ffc1eed81752c53e316` |
+| Exact runtime files | Provider SHA-256 `2cee9f1d32621d06654d39f749008a7c9ebd7bf41b4edfade6a65b55395ef352`; MQTT bridge SHA-256 `315f44311fb182322e7057c14174be76dc8682f8d0db946fcbbec8d2c0df4a86`; init script SHA-256 `e67f5d1f98d88c6a1f06b8dc04b9f0a22afe434c325af049ba3cbaa94d3c78f0` |
+| Registry persistence | All eleven devices remained unchanged across installation and the second reboot. Registry SHA-256 `a7f59bcef262347b4c95142dc5e10b90ac5c5669791317f8fbd0c8a86ad03355` |
+| Live smoke evidence | Persistent alternate-slot boot, autonomous delayed startup and 60 consecutive successful Provider control `GET` checks out of 60 passed with the RC7 image |
+| RC7-specific automated evidence | 300 repository tests pass with one optional Lua 5.1 test skipped; Ruff passes. The deterministic blocked-write regression passes under ASan/UBSan and reproduces native `cR/TX` backpressure, keeps control `GET` responsive, serializes two native writers, defers catalog injection and rejects stale bookkeeping after simulated descriptor reuse. Strict native integration/self-tests and the ARM GCC 13.4/Freetz image build also pass. The broader sanitizer/fuzz/fault evidence continues to cover unchanged paths; full LeakSanitizer and ThreadSanitizer are not claimed for this exact head |
+| Physical pairing/update evidence for this exact source | **Pending.** No real pairing or controller firmware update has yet been repeated under RC7. The successful 440 update from 05.38 to 05.45 was performed under RC6 and is historical evidence only, not physical confirmation of the RC7 mutex/write-path correction |
 
-RC6 is installed and its software/Mesh path plus the real device-update
-maintenance case are confirmed. Rows and source-entity variants not
-exercised by the earlier broader canary remain at their explicit automated or
-pending qualification level below. The archived `0.3.0-rc.1` image predates
-the current fixes.
+RC7 is persistently installed and its artifact identity, rollback slot, registry
+identity, autonomous reboot recovery and control-channel availability are
+confirmed. The repaired failure mechanism is deterministically reproduced and
+covered in the native test, but the corresponding real pairing/firmware-update
+load still requires one controlled hardware observation. Rows and source-entity
+variants not exercised by the earlier broader canary remain at their explicit
+automated or pending qualification level below. The archived `0.3.0-rc.1`
+image predates the current fixes.
 
 ## Automated gate
 
@@ -117,10 +122,13 @@ remaining six 440s.
 
 ## Release decision
 
-The candidate has been flashed to the laboratory 7530. Its exact runtime files,
-registry identity, automatic startup, Home Assistant load, 6690 Mesh presence
-and focused first-press round trip on a directly paired 440 passed. It is
-approved for publication as a release candidate and for a controlled rollout
-to the remaining controllers. Profiles and source-entity combinations outside
-the canary retain their stated qualification level, and the documented
-cosmetic limitations are not release blockers.
+The RC7 candidate has been flashed persistently to the laboratory 7530. Its
+exact runtime files, rollback slot, eleven-device registry identity, second
+reboot recovery, Home Assistant manifest and 60/60 control checks passed. This
+supports publication as a prerelease and continued ordinary canary use. It does
+**not** yet justify describing the pairing/update incident as physically closed:
+the deterministic regression confirms the repaired mechanism, while one real
+pairing or controller firmware-maintenance observation under RC7 remains
+pending. Profiles and source-entity combinations outside the existing canaries
+retain their stated qualification level, and the documented cosmetic
+limitations are not release blockers.

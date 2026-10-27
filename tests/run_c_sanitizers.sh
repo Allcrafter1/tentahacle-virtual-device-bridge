@@ -39,7 +39,7 @@ compile tests/provider_dispatch_fuzz_test.c "$src/provider_profiles.c" "$src/pro
     -ldl -pthread -o "$audit_build/dispatch-fuzz"
 "$audit_build/dispatch-fuzz"
 "$audit_build/provider-color"
-"$audit_build/failure-regression"
+timeout 20 "$audit_build/failure-regression"
 compile -fPIC -shared "$src/virtual_provider.c" "$src/provider_profiles.c" "$src/provider_events.c" \
     "$src/provider_transport.c" "$src/provider_catalog_sync.c" "$src/device_registry.c" \
     -ldl -pthread -Wl,-z,defs -o "$audit_build/provider.so"

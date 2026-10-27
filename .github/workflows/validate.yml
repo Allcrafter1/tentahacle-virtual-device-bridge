@@ -48,7 +48,7 @@ jobs:
       - run: /tmp/mqtt_bridge_test
       - run: cc -Ofast -fno-fast-math -fno-finite-math-only -fstack-protector-strong -std=gnu11 -Wall -Wextra -Werror -fPIC -shared freetz/package/src/virtual_provider.c freetz/package/src/provider_profiles.c freetz/package/src/provider_events.c freetz/package/src/provider_transport.c freetz/package/src/provider_catalog_sync.c freetz/package/src/device_registry.c -ldl -pthread -Wl,-z,relro,-z,now,-z,defs -o /tmp/virtual_provider.so
       - run: cc -std=gnu11 -Wall -Wextra -Werror tests/provider_failure_regression_test.c freetz/package/src/provider_profiles.c freetz/package/src/provider_events.c freetz/package/src/provider_transport.c freetz/package/src/provider_catalog_sync.c freetz/package/src/device_registry.c -ldl -pthread -o /tmp/provider_failure_regression_test
-      - run: /tmp/provider_failure_regression_test
+      - run: timeout 20 /tmp/provider_failure_regression_test
       - run: cc -O2 -Wall -Wextra -Werror -Ifreetz/package/src tests/provider_color_test.c freetz/package/src/provider_profiles.c freetz/package/src/provider_events.c freetz/package/src/provider_transport.c freetz/package/src/provider_catalog_sync.c freetz/package/src/device_registry.c -ldl -pthread -o /tmp/provider_color_test
       - run: /tmp/provider_color_test
       - run: cc -std=gnu11 -Wall -Wextra -Werror freetz/package/src/provider_selftest.c -o /tmp/provider_selftest

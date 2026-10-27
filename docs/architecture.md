@@ -577,19 +577,43 @@ failure modes that matter on a dedicated long-running bridge:
   invalid-pointer, data-race or code-execution defect was found in the bounded
   review.
 
-This is the code-complete candidate, not a claim that undocumented FRITZ radio
-and UI behavior can be proven offline. The `0.3.0-rc6` image built from commit
-`ae76886` and its matching Home Assistant component are installed on the
-laboratory 7530. Exact root-filesystem hashes, alternate-slot boot, persistent
-nine-device registry identity, automatic provider/MQTT startup, 6690 Mesh
-presence and an HA restart passed focused live checks. A real 440 update from
-05.38 to 05.45 also completed under the exact RC6 watchdog behavior without an
-AHA restart. Other physical 440 confirmation remains separate and is tracked in the
-[release validation checklist](release-validation.md).
+RC7 addresses a second maintenance path that the RC6 transport-disconnect grace
+period could not cover. A native `cR/TX` write can block during pairing or a
+battery-device firmware transfer. The old hook held the global Provider mutex
+across that write, so the control worker could not answer `GET`; after three
+such failures the watchdog could restart an otherwise healthy AHA process.
 
-For this release-candidate snapshot, 300 repository tests pass; the optional
-Lua 5.1 resync test skips on the current host. Ruff, shell/JSON validation,
-strict native integration tests, the focused ASan/UBSan backpressure regression
-and the ARM/Freetz 7530 image build pass. The broader native sanitizer/fuzz/fault
-evidence remains inherited from the immediately preceding RC4 source; full
-LeakSanitizer and ThreadSanitizer are not claimed for this exact head.
+The RC7 hook snapshots the tracked socket-pair epoch and duplicates the file
+descriptor while holding the state mutex, then releases that mutex before the
+native write. A dedicated `native_write_lock` preserves write ordering without
+blocking health and state access. After the write, catalog bookkeeping is
+accepted only if the original pair and epoch still match, preventing a
+concurrent close and numeric descriptor reuse from attaching stale work to a
+new connection. Provider catalog injection is deferred while the native writer
+owns the stream and retried afterwards. A deterministic regression blocks two
+native writers, confirms that control `GET` remains responsive, verifies
+deferred injection and simulates descriptor reuse.
+
+For this exact RC7 source, 300 repository tests pass and the optional Lua 5.1
+test skips on the current host. Ruff, strict native integration/self-tests, the
+focused ASan/UBSan blocked-write regression and the ARM GCC 13.4/Freetz image
+build pass. The broader sanitizer/fuzz/fault evidence covers unchanged paths;
+full LeakSanitizer and ThreadSanitizer are not claimed for this exact head.
+
+This is still a release candidate, not a claim that undocumented FRITZ radio
+and UI behavior can be proven offline. The `0.3.0-rc7` image built from commit
+`add07f9166a8dd059aec556bf5236d551e0d04fe` is installed persistently in boot
+slot 1 of the laboratory 7530, with RC6 retained in slot 0 for rollback. The
+matching Home Assistant RC7 manifest is loaded with one hub and eleven device
+subentries. The unchanged eleven-device registry survived the installation and
+a second controlled reboot; after that reboot the complete service recovered
+autonomously in about 110 seconds and 60 consecutive Provider control `GET`
+checks succeeded.
+
+The exact RC7 image and runtime hashes are recorded in the
+[release validation checklist](release-validation.md). The earlier real 440
+update from 05.38 to 05.45 remains RC6 evidence only. Pairing or device firmware
+maintenance has **not** yet been physically repeated with RC7; the deterministic
+blocked-write test validates the repaired mechanism but does not replace that
+hardware observation. Broader profile checks likewise retain their explicitly
+documented qualification level.

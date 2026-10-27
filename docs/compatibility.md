@@ -24,11 +24,21 @@ recommended latency topology: commands from the 6690 master to virtual
 endpoints on the 7530 took about 6–7 seconds in the laboratory. Direct pairing
 of the 440 with the dedicated bridge box is the target topology.
 
-The exact `0.3.0-rc6` image built from commit `ae76886` is installed on the
-laboratory box together with the matching Home Assistant component. Exact
-root-filesystem hashes, alternate-slot boot, nine-device registry persistence,
-automatic provider/MQTT startup, an HA restart and presence of all nine virtual
-devices on the 6690 Mesh master passed live checks. The RC6 watchdog also let a
-real directly paired 440 complete its 05.38 to 05.45 update without restarting
-AHA. Qualification of profiles outside the canary is stated in
+The exact `0.3.0-rc7` image built from commit
+`add07f9166a8dd059aec556bf5236d551e0d04fe` is installed persistently in boot
+slot 1 of the laboratory box; the preceding RC6 image remains in slot 0 for
+rollback. Its matching Home Assistant RC7 manifest is loaded with the unchanged
+hub and eleven device subentries. The eleven-device registry survived two
+controlled boots unchanged. After the second boot the Provider, watchdog and
+MQTT path became healthy without intervention in about 110 seconds, followed
+by 60 successful control `GET` checks out of 60.
+
+RC7 removes the Provider state/control mutex from the duration of blocking
+native `cR/TX` writes while preserving connection identity, native write order
+and deferred catalog injection. The failure mechanism is covered by a
+deterministic blocked-write regression. A real pairing or controller firmware
+update has **not yet been physically repeated with RC7**. The successful 05.38
+to 05.45 update belongs to RC6 and must not be treated as physical validation
+of this RC7 correction. Exact artifacts, hashes and remaining profile
+qualification are stated in
 [`release-validation.md`](release-validation.md).

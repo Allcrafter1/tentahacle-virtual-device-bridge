@@ -136,16 +136,27 @@ Known boundaries of the current candidate:
 ### Project status and contributions
 
 This is working experimental software, not a finished appliance. The exact
-`0.3.0-rc6` image built from commit `ae76886` is installed on the documented
-laboratory 7530 together with the matching Home Assistant component. It keeps
-all nine current device identities and starts cleanly on alternate boot slot 0;
-the 6690 Mesh master reports every virtual device present again. RC6 separates
-a responsive provider with temporary native transport downtime from a hung
-control channel. A repeated FRITZ!Smart Control 440 update from 05.38 to 05.45
-completed without an AHA restart, while genuinely failed paths retain bounded
-recovery. The exact evidence is tracked in the release checklist. Useful
-contributions still include longer real-world testing and verification on
-additional supported hardware.
+`0.3.0-rc7` image built from commit `add07f9166a8dd059aec556bf5236d551e0d04fe`
+is installed persistently on boot slot 1 of the documented laboratory 7530;
+RC6 remains available in slot 0 for rollback. The matching Home Assistant RC7
+manifest is loaded with the unchanged hub and all eleven device subentries.
+The eleven-device registry survived two controlled boots unchanged, and after
+the second boot the service became healthy without intervention after about
+110 seconds. Sixty consecutive Provider control checks then succeeded.
+
+RC7 fixes a second maintenance failure mode found after RC6: a blocking native
+`cR/TX` write could hold the Provider's global state/control mutex long enough
+for the watchdog to mistake a healthy AHA process for a failed control channel.
+The Provider now duplicates the tracked descriptor, checks its connection
+epoch after the unlocked write, serializes native writes separately and defers
+catalog injection until that native write is complete. A deterministic
+blocked-write regression covers this mechanism. A real pairing or controller
+firmware update under RC7 has **not yet been physically repeated**, so the
+earlier RC6 05.38-to-05.45 update is historical evidence, not confirmation of
+the RC7 fix.
+The exact evidence and this remaining qualification are tracked in the release
+checklist. Useful contributions still include that physical maintenance canary,
+longer real-world testing and verification on additional supported hardware.
 Please
 report reproducible findings in [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues).
 
