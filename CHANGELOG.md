@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0-rc6 - 2026-10-27
 
 - Distinguish a responsive virtual provider whose native AHA transport is
   temporarily disconnected from an unresponsive provider control channel.
@@ -12,6 +12,11 @@
 - Make MQTT bridge diagnostics report which of those two failure modes was
   observed instead of labelling every disconnected transport as a hung
   provider.
+
+The original RC5 watchdog interrupted a real FRITZ!Smart Control 440 update by
+restarting `aha` after 15 seconds of native transport downtime. The temporary
+RC6 watchdog completed the repeated 05.38 to 05.45 update without an AHA
+restart; all nine virtual devices reconnected with their identities intact.
 
 ## 0.3.0-rc5 - 2026-10-27
 
