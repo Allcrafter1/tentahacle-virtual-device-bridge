@@ -28,8 +28,8 @@ The exact `0.3.0-rc4` candidate from commit `431eadb` is installed on the
 laboratory box together with the matching Home Assistant component. Exact
 root-filesystem hashes, cold boot, service restart, MQTT-process recovery,
 virtual-`aha` recovery, registry persistence and an HA restart passed live
-checks. This does not by itself establish physical 440 behavior: the focused
-Kelvin endpoint and saved-widget check remains tracked in
-[`release-validation.md`](release-validation.md). Until the exact built
-revision passes that checklist, it is neither the recommended seven-controller
-production rollout nor a final release.
+checks. A directly paired 440 then passed the focused canary for retained
+widget placement, brightness, both native Kelvin endpoint transitions and the
+cover path. The exact pair is approved for a controlled seven-controller
+rollout; profiles and source-entity variants outside that canary retain the
+qualification level stated in [`release-validation.md`](release-validation.md).

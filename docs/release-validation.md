@@ -14,11 +14,12 @@ open-ended feature backlog.
 | Exact artifact | `TentAHAcle-0.3.0-rc4-7530-08.25.image`, SHA-256 `90e87a18090e8391a9b714894c53d63852667de62e735805c9fa917472585333` |
 | Live smoke evidence | Cold boot, package registration, delayed asynchronous service/provider startup, broker authentication, persistent registry, clean explicit service restart, MQTT-process watchdog restart, virtual-`aha` watchdog recovery and an HA restart passed. The two UIDs/remote IDs and registry SHA remained unchanged; native resync found all three saved widget placements |
 | Automated evidence | Exact head: 296 Python tests passed and one optional Lua 5.1 test skipped. Ruff, JSON/shell/packaging checks, strict native tests, ASan/UBSan, deterministic fuzz/fault tests, independent capacity review and the ARM GCC 13.4/Freetz build passed. LeakSanitizer/ThreadSanitizer are not claimed for this exact head |
-| Physical evidence for this exact source | Pending one focused 440 canary check: saved widget placement after reboot/recovery, both native Kelvin endpoint transitions, one brightness up/down and cover open/close if that profile will be deployed |
+| Physical evidence for this exact source | Passed on the directly paired 440: saved widget placement survived reboot/recovery, brightness up/down worked, both native Kelvin endpoint transitions completed and the cover opened/closed correctly |
 
-Consequently, installation and a live smoke check must not be described as
-hardware-confirmed until the corresponding row below is repeated with a 440.
-The archived `0.3.0-rc.1` image predates the current fixes.
+The focused canary is hardware-confirmed for this exact installed revision.
+Rows and source-entity variants not exercised by that canary remain at their
+explicit automated or pending qualification level below. The archived
+`0.3.0-rc.1` image predates the current fixes.
 
 ## Automated gate
 
@@ -115,10 +116,10 @@ remaining six 440s.
 
 ## Release decision
 
-The candidate has been flashed to the laboratory 7530 and its runtime and
-bounded recovery paths have passed. The only remaining rollout gate is the
-focused physical canary check above with one directly paired 440. It is ready
-for seven-controller production use and public release only when that check has
-no critical failure or reproducible major functional defect.
+The candidate has been flashed to the laboratory 7530; its runtime, bounded
+recovery paths and focused physical canary with one directly paired 440 passed.
+It is approved for a controlled rollout to the seven available controllers and
+for publication as a release candidate. This is not a claim that every optional
+profile/source-entity combination in the matrix has physical qualification.
 Cosmetic limitations above are acceptable when documented; new speculative
 enhancements are not release blockers.

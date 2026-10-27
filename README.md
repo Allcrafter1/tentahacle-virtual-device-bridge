@@ -139,13 +139,12 @@ This is working experimental software, not a finished appliance. The exact
 `0.3.0-rc4` candidate from commit `431eadb` is installed on the documented
 laboratory 7530 together with the matching Home Assistant component. Cold boot,
 explicit service restart, MQTT-process recovery, virtual-`aha` recovery,
-registry persistence and an HA restart passed live checks. A correction is
-still considered physically confirmed only after that exact revision has run
-through the focused 440 hardware check. Before broad deployment, rc4 therefore
-still needs the short Kelvin endpoint/assignment-persistence check described in
-the release checklist and a brief brightness/cover smoke test. Useful
-contributions include longer real-world testing and verification on additional
-supported hardware.
+registry persistence and an HA restart passed live checks. The focused test of
+this exact revision with a directly paired 440 also confirmed retained screen
+assignments, brightness, both Kelvin endpoint transitions and the cover path.
+The candidate is therefore approved for the controlled rollout to the seven
+available 440 controllers. Useful contributions still include longer real-world
+testing and verification on additional supported hardware.
 Please
 report reproducible findings in [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues).
 

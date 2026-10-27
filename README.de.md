@@ -158,11 +158,11 @@ Produkt. Der exakte Kandidat `0.3.0-rc4` aus Commit `431eadb` ist auf der
 beschriebenen Labor-7530 zusammen mit der passenden Home-Assistant-Komponente
 installiert. Kaltstart, expliziter Dienstneustart, Wiederherstellung von MQTT-
 Prozess und virtuellem `aha`, Registry-Persistenz sowie ein HA-Neustart haben
-Live-Tests bestanden. Neue Korrekturen gelten trotzdem erst nach dem gezielten
-Test dieser exakten Version mit einem 440 als praktisch bestätigt. Vor einem
-breiten Rollout fehlen deshalb noch der kurze Kelvin-Endpunkt-/Zuweisungstest
-aus der Release-Checkliste und ein knapper Helligkeits-/Rollladen-Smoke-Test.
-Besonders hilfreich sind längere Praxistests und Prüfungen auf zusätzlicher
+Live-Tests bestanden. Der gezielte Test dieser exakten Version mit einem direkt
+angemeldeten 440 hat außerdem die erhaltenen Zuweisungen, Helligkeit, beide
+Kelvin-Endpunktübergänge und den Rollladenpfad bestätigt. Damit ist der Kandidat
+für den kontrollierten Rollout auf die sieben vorhandenen 440 freigegeben.
+Besonders hilfreich bleiben längere Praxistests und Prüfungen auf zusätzlicher
 unterstützter Hardware.
 Nachvollziehbare Ergebnisse bitte über
 [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues) melden.

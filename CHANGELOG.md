@@ -6,6 +6,10 @@
   64 virtual devices. The larger bound remains an implementation ceiling, not
   a claimed FRITZ!OS maximum, and is covered by full-capacity persistence and
   overflow tests.
+- Qualify the exact installed FRITZ!Box/Home Assistant pair through cold boot,
+  service and dependency recovery, registry persistence and a directly paired
+  440 canary covering saved placement, brightness, native Kelvin endpoint
+  cycling and cover open/close.
 
 This candidate must be installed as a matched FRITZ!Box and Home Assistant
 pair. Automated, installed/runtime and physical-controller evidence are
