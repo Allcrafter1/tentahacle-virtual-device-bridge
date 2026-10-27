@@ -43,6 +43,44 @@ def test_color_temperature_uses_current_kelvin_action() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("profile", "value", "expected"),
+    [
+        (
+            DeviceProfile.DIMMABLE_LIGHT,
+            '"level":42',
+            {"entity_id": "light.desk", "brightness_pct": 42},
+        ),
+        (
+            DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+            '"color_temperature":2700',
+            {"entity_id": "light.desk", "color_temp_kelvin": 2700},
+        ),
+    ],
+)
+def test_light_value_command_is_not_lost_while_current_state_is_off(
+    profile: DeviceProfile, value: str, expected: dict[str, object]
+) -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}",'
+        f'"state":0,{value},"sequence":7}}'
+    )
+    assert service_call_for_command(profile, "light.desk", parsed) == (
+        "light",
+        "turn_on",
+        expected,
+    )
+
+
+def test_light_state_only_off_command_still_turns_light_off() -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","state":0,"sequence":7}}'
+    )
+    assert service_call_for_command(
+        DeviceProfile.DIMMABLE_LIGHT, "light.desk", parsed
+    ) == ("light", "turn_off", {"entity_id": "light.desk"})
+
+
 def test_color_temperature_feedback_uses_confirmed_value() -> None:
     assert feedback_for_state(
         DeviceProfile.COLOR_TEMPERATURE_LIGHT,
@@ -63,6 +101,23 @@ def test_cover_actions(action: str, service: str) -> None:
         service_call_for_command(DeviceProfile.COVER, "cover.blind", parsed)[1]
         == service
     )
+
+
+@pytest.mark.parametrize(
+    ("state", "attributes", "expected"),
+    [
+        ("open", {}, {"position": "100"}),
+        ("closed", {}, {"position": "0"}),
+        ("opening", {}, {}),
+        ("closing", {}, {}),
+        ("opening", {"current_position": 34}, {"position": "34"}),
+        ("closing", {"current_position": 66}, {"position": "66"}),
+    ],
+)
+def test_cover_feedback_handles_binary_and_position_covers(
+    state: str, attributes: dict[str, object], expected: dict[str, str]
+) -> None:
+    assert feedback_for_state(DeviceProfile.COVER, state, attributes) == expected
 
 
 def test_state_feedback_rounds_climate_to_half_degrees() -> None:

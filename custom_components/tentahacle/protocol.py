@@ -66,7 +66,12 @@ def service_call_for_command(
         DeviceProfile.COLOR_TEMPERATURE_LIGHT,
     }:
         state = _binary_state(values)
-        if not state:
+        # AHA reports the current relay state together with value commands. A
+        # brightness or colour-temperature command received while the light is
+        # off is still a request to apply that value (and turn the light on),
+        # not a state-only OFF command.
+        has_value_command = "level" in values or "color_temperature" in values
+        if not state and not has_value_command:
             return "light", "turn_off", {"entity_id": entity_id}
         data: dict[str, Any] = {"entity_id": entity_id}
         if "level" in values:
@@ -182,6 +187,13 @@ def feedback_for_state(
             and 0 <= position <= 100
         ):
             return {"position": str(position)}
+        # Binary covers do not expose current_position. Only publish confirmed
+        # end states; opening/closing must not be mistaken for an arrived end
+        # position.
+        if state == "open":
+            return {"position": "100"}
+        if state == "closed":
+            return {"position": "0"}
         return {}
 
     if profile is DeviceProfile.THERMOSTAT:
