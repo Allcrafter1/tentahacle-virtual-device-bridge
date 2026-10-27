@@ -38,7 +38,7 @@ The current source includes automated coverage for exact-palette Kelvin/HS
 state, off-palette Kelvin normalization at both software boundaries, binary and
 position covers (including float positions), Celsius/Fahrenheit thermostat
 translation, OFF/MAX/current temperature, restart-safe timers, the current
-32-device implementation capacity, URL fragments, HA-authoritative deletion,
+64-device implementation capacity, URL fragments, HA-authoritative deletion,
 registry persistence and watchdog transitions. Automated coverage is not a
 claim that the same revision is installed or physically confirmed.
 
@@ -59,7 +59,7 @@ other six controllers.
 | 5+2 shadow schedule | Parsing, current/next calculation, stale schedule clearing | Use validated Zigbee2MQTT adapter and confirm next-change time | Display matches HA schedule; FRITZ edits do not become authority |
 | Mapping lifecycle | Stable UID, rebind, delete, whole-hub cleanup | Rebind keeps 440 placement; delete removes endpoint; repeat with an active timer | Old climate is restored and no stale native device remains |
 | Native automation | Protocol endpoint is native; selection/persistence observed | Activate one harmless template per profile, one multi-device scenario and one routine | HA action occurs and confirmed state returns; unsupported FRITZ trigger types are documented |
-| Capacity/link | Current 32-device implementation limit, prune-before-upsert, fragment deep-link construction | 31 -> 32 -> rejected 33; replace one at full capacity; save and open `http://192.168.178.38/#/smart-home/devices` from all three HA links | No partial registry, replacement succeeds, links open Smart Home; capacity is not described as a native ceiling |
+| Capacity/link | Current 64-device implementation limit, prune-before-upsert, fragment deep-link construction | 63 -> 64 -> rejected 65; replace one at full capacity; save and open `http://192.168.178.38/#/smart-home/devices` from all three HA links | No partial registry, replacement succeeds, links open Smart Home; capacity is not described as a native ceiling |
 
 The lack of immediate refresh on an already open 440 page is not a failure: it
 was reproduced with an original FRITZ!Thermo. Reopening the page must show the

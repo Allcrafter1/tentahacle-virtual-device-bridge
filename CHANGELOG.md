@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0-rc4 - 2026-10-27
+
+- Raise the coordinated Home Assistant and native bridge capacity from 32 to
+  64 virtual devices. The larger bound remains an implementation ceiling, not
+  a claimed FRITZ!OS maximum, and is covered by full-capacity persistence and
+  overflow tests.
+
+This candidate must be installed as a matched FRITZ!Box and Home Assistant
+pair. Automated, installed/runtime and physical-controller evidence are
+reported separately in `docs/release-validation.md`.
+
 ## 0.3.0-rc3 - 2026-10-27
 
 - Restore the native cyclic FRITZ!OS color-temperature selector: endpoint

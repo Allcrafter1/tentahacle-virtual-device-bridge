@@ -3,7 +3,7 @@
 #define TVB_DEVICE_REGISTRY_H
 #include <stddef.h>
 #include <stdint.h>
-#define TVB_REGISTRY_CAPACITY 32u
+#define TVB_REGISTRY_CAPACITY 64u
 #define TVB_DEVICE_NAME_BYTES 80u
 #define TVB_DEVICE_UID_BYTES 20u
 #define TVB_FIRST_REMOTE_ID 456u

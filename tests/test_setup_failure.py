@@ -115,7 +115,7 @@ def test_failed_real_start_releases_created_subscriptions_and_timer() -> None:
     unsubscribers = [Mock(), Mock(), Mock()]
     timer_cancel = Mock()
     namespace = {
-        "MAX_VIRTUAL_DEVICES": 32,
+        "MAX_VIRTUAL_DEVICES": 64,
         "ConfigEntryError": RuntimeError,
         "timedelta": timedelta,
         "mqtt": SimpleNamespace(

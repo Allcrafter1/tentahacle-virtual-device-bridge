@@ -91,7 +91,7 @@
         "source_entity_missing": "Die ausgewählte Home-Assistant-Entität existiert nicht mehr.",
         "incompatible_cover": "Der ausgewählte Rollladen kann die FRITZ-Befehle Öffnen und Schließen nicht beide umsetzen.",
         "incompatible_thermostat": "Das ausgewählte Thermostat kann die von dieser Bridge benötigten Thermostatbefehle nicht umsetzen.",
-        "device_limit_reached": "Diese Bridge hat die aktuelle Grenze von 32 virtuellen Geräten erreicht."
+        "device_limit_reached": "Diese Bridge hat die aktuelle Grenze von 64 virtuellen Geräten erreicht."
       }
     }
   },

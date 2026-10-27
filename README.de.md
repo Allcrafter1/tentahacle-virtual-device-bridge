@@ -88,7 +88,7 @@ Gerät kann auf mehreren Bedieneinheiten liegen. Beim Austausch einer
 Home-Assistant-Entität können FRITZ!-Identität und vorhandene 440-Zuweisungen
 erhalten bleiben.
 
-Eine Bridge unterstützt derzeit höchstens **32 virtuelle Geräte**. Das ist
+Eine Bridge unterstützt derzeit höchstens **64 virtuelle Geräte**. Das ist
 eine konservative Grenze unserer statisch dimensionierten Registry und der
 Home-Assistant-Oberfläche, keine nachgewiesene FRITZ!OS- oder `aha`-Grenze.
 Dasselbe virtuelle Gerät darf auf mehreren 440 liegen und zählt trotzdem nur

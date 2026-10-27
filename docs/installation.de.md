@@ -15,7 +15,7 @@ Nutzung weder SSH noch Terminalbefehle oder manuelle Konfigurationsdateien
 erforderlich.
 
 > [!IMPORTANT]
-> Version 0.3.0-rc3 aktualisiert 0.2.0-beta.1, 0.3.0-rc.1 oder 0.3.0-rc2 direkt: Aktualisiere die
+> Version 0.3.0-rc4 aktualisiert 0.2.0-beta.1, 0.3.0-rc.1, 0.3.0-rc2 oder 0.3.0-rc3 direkt: Aktualisiere die
 > Home-Assistant-Integration und das Freetz-Paket gemeinsam; vorhandene
 > virtuelle Identitäten und Controller-Zuweisungen bleiben erhalten. Nur beim
 > direkten Wechsel von einem früheren 0.1.x-Teststand ist eine Neuinstallation
@@ -298,7 +298,7 @@ Gerätetyps erzeugt dagegen ein neues virtuelles Gerät.
 Wenn ein Mapping in Home Assistant gelöscht wird, entfernt die Integration
 auch das zugehörige virtuelle Gerät aus FRITZ!OS und aus dem Bridge-Register.
 
-Eine Bridge unterstützt derzeit höchstens **32 virtuelle Geräte**. Das ist
+Eine Bridge unterstützt derzeit höchstens **64 virtuelle Geräte**. Das ist
 eine konservative Grenze der aktuellen Implementierung und keine bestätigte
 FRITZ!OS- oder `aha`-Grenze. Home Assistant ist
 für ihren Lebenszyklus zuständig: Anlegen, Umbenennen, Neubinden und Löschen

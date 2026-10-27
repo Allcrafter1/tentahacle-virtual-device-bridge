@@ -57,6 +57,21 @@ def test_home_assistant_freetz_and_changelog_versions_match() -> None:
     assert f"## {version} -" in (ROOT / "CHANGELOG.md").read_text()
 
 
+def test_native_and_home_assistant_capacity_match() -> None:
+    """Keep the independently installed halves on one device ceiling."""
+    native_header = (ROOT / "freetz/package/src/device_registry.h").read_text()
+    ha_constants = (ROOT / "custom_components/tentahacle/const.py").read_text()
+    native = re.search(
+        r"^#define TVB_REGISTRY_CAPACITY (\d+)u$", native_header, re.MULTILINE
+    )
+    home_assistant = re.search(
+        r"^MAX_VIRTUAL_DEVICES = (\d+)$", ha_constants, re.MULTILINE
+    )
+    assert native is not None
+    assert home_assistant is not None
+    assert native.group(1) == home_assistant.group(1) == "64"
+
+
 def test_package_version_is_stripped_by_freetz_modload() -> None:
     """Keep prerelease syntax compatible with Freetz's package-name parser."""
     makefile = PACKAGE_MAKEFILE.read_text()

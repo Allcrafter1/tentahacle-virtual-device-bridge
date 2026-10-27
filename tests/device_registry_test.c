@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+_Static_assert(TVB_REGISTRY_CAPACITY == 64u, "release capacity must remain synchronized with HA");
 static const char *uid = "TVB00000000000000af";
 static void validation(void) {
     char name[81];

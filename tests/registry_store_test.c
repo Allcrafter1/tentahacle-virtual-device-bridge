@@ -31,10 +31,11 @@ static void tracked_free(void *memory) {
 } while (0)
 
 int main(void) {
-    tvb_device_registry original, loaded, unchanged;
+    tvb_device_registry original, loaded, unchanged, full, full_loaded;
     uint16_t remote_id = 0;
-    char error[160], path[128], *json;
+    char error[160], path[128], *json, key[20], max_name[80];
     const tvb_device *device;
+    size_t index;
     tvb_registry_init(&original);
     CHECK(tvb_registry_add(&original, 0, "TVB0123456789abcdef", "Morgenlicht",
                            TVB_PROFILE_COLOR_TEMPERATURE_LIGHT, &remote_id) == TVB_REGISTRY_OK);
@@ -61,6 +62,26 @@ int main(void) {
     CHECK(device && device->color_full);
     device = tvb_registry_find(&loaded, "TVB1111111111111111");
     CHECK(device && !device->enabled);
+
+    /* The configured release ceiling must remain serializable, persistable
+     * and exactly recoverable even with maximum-length UTF-8-safe names and
+     * the larger HAN-FUN identity records. */
+    tvb_registry_init(&full);
+    memset(max_name, 'x', sizeof(max_name) - 1);
+    max_name[sizeof(max_name) - 1] = 0;
+    for (index = 0; index < TVB_REGISTRY_CAPACITY; ++index) {
+        snprintf(key, sizeof(key), "TVB%016llX", (unsigned long long)index);
+        CHECK(tvb_registry_add(&full, full.revision, key, max_name,
+                               (tvb_device_profile)(index % TVB_PROFILE_COUNT),
+                               NULL) == TVB_REGISTRY_OK);
+    }
+    CHECK(full.count == 64);
+    json = tvb_registry_serialize(&full);
+    CHECK(json != NULL);
+    CHECK(json && strlen(json) < 65536u);
+    CHECK(json && tvb_registry_deserialize(json, &full_loaded, error, sizeof(error)));
+    if (json) tvb_registry_serialized_free(json);
+    CHECK(!memcmp(&full, &full_loaded, sizeof(full)));
 
     /* Allocation failure at every construction/printing step must release
      * both unattached JSON children and the eventual root tree. */
@@ -116,6 +137,11 @@ int main(void) {
         &loaded, error, sizeof(error)));
 
     snprintf(path, sizeof(path), "/tmp/tvb-registry-test-%ld.json", (long)getpid());
+    unlink(path);
+    CHECK(tvb_registry_save_file(path, &full, error, sizeof(error)));
+    memset(&full_loaded, 0, sizeof(full_loaded));
+    CHECK(tvb_registry_load_file(path, &full_loaded, error, sizeof(error)));
+    CHECK(!memcmp(&full, &full_loaded, sizeof(full)));
     unlink(path);
     CHECK(tvb_registry_save_file(path, &original, error, sizeof(error)));
     memset(&loaded, 0, sizeof(loaded));

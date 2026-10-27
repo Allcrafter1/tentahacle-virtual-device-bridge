@@ -173,10 +173,31 @@ static void profile_matrix_and_cache(void){
     remap_feedback_cache(&before);assert(!*feedback_cache[3][0]);
     memset(feedback_cache,0,sizeof(feedback_cache));
 }
+static void management_capacity(void){
+    tvb_device_registry candidate_registry,before;char uid[20],request[320];
+    int mutate,announce;
+    tvb_registry_init(&candidate_registry);
+    for(size_t i=0;i<TVB_REGISTRY_CAPACITY;i++){
+        snprintf(uid,sizeof(uid),"TVB%016llX",(unsigned long long)i);
+        snprintf(request,sizeof(request),
+            "{\"schema_version\":1,\"request_id\":\"capacity\",\"operation\":\"upsert_device\","
+            "\"device\":{\"uid\":\"%s\",\"name\":\"Device\",\"profile\":\"switch\"}}",uid);
+        assert(!candidate(request,&candidate_registry,&mutate,&announce));
+        assert(mutate&&candidate_registry.count==i+1);
+    }
+    assert(candidate_registry.count==64);
+    before=candidate_registry;
+    assert(!strcmp(candidate(
+        "{\"schema_version\":1,\"request_id\":\"overflow\",\"operation\":\"upsert_device\","
+        "\"device\":{\"uid\":\"TVBFFFFFFFFFFFFFFFF\",\"name\":\"Overflow\",\"profile\":\"switch\"}}",
+        &candidate_registry,&mutate,&announce),"registry_full"));
+    assert(!memcmp(&candidate_registry,&before,sizeof(before)));
+}
 int main(void){
     debug_logging();
     color_temperature_palette_feedback();
     profile_matrix_and_cache();
+    management_capacity();
     pid_t timed_child=fork();assert(timed_child>=0);
     if(!timed_child){for(;;)pause();}
     assert(!wait_child(timed_child,1,0));

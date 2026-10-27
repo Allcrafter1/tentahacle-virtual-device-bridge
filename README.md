@@ -78,7 +78,7 @@ between the virtual FRITZ! device and the real entity. One virtual device can be
 placed on several controllers, and replacing the mapped Home Assistant entity
 can preserve its FRITZ! identity and existing 440 assignments.
 
-A bridge currently supports at most **32 virtual devices**. This is a
+A bridge currently supports at most **64 virtual devices**. This is a
 conservative limit of our statically sized registry and Home Assistant UI, not
 a proven FRITZ!OS or `aha` limit. The same virtual device may be placed on
 several 440s and still counts only once. Create, rename, rebind and delete

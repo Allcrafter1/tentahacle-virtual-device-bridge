@@ -14,7 +14,7 @@ After the one-time firmware preparation, normal configuration requires no SSH,
 terminal commands or manual file editing.
 
 > [!IMPORTANT]
-> Version 0.3.0-rc3 upgrades 0.2.0-beta.1, 0.3.0-rc.1 or 0.3.0-rc2 in place: update the Home Assistant
+> Version 0.3.0-rc4 upgrades 0.2.0-beta.1, 0.3.0-rc.1, 0.3.0-rc2 or 0.3.0-rc3 in place: update the Home Assistant
 > integration and Freetz package together, while keeping existing virtual-device
 > identities and controller assignments. Only installations coming directly
 > from a former 0.1.x test build need a clean reinstall because 0.2.0-beta.1
@@ -256,7 +256,7 @@ mappings are unnecessary. Reconfiguring a mapping can bind a replacement HA
 entity or change the FRITZ name without changing its FRITZ identity. A device
 type change creates a new mapping and requires a new 440 assignment.
 
-One bridge currently supports at most **32 virtual devices**. This is a
+One bridge currently supports at most **64 virtual devices**. This is a
 conservative implementation limit, not a proven FRITZ!OS or `aha` limit.
 Home Assistant is the
 lifecycle authority: create, rename, rebind and delete devices there. Deleting

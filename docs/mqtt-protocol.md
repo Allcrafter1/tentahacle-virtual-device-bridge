@@ -49,7 +49,7 @@ Supported profiles are `switch`, `dimmable_light`,
 UTF-8 bytes without leading whitespace. Optional `color_full` is valid only for
 `color_temperature_light`; it advertises Hue/Saturation in addition to Kelvin.
 Omitting it on an existing device preserves the stored capability. The registry
-currently holds at most 32 devices. This is a conservative implementation
+currently holds at most 64 devices. This is a conservative implementation
 limit, not a proven FRITZ!OS or `aha` ceiling.
 
 Other operations are:
@@ -75,7 +75,7 @@ listed in `keep_uids` are deleted through the local native AHA API, removed
 from the running provider and removed from the persistent bridge registry.
 The list may include valid desired UIDs that are not in the registry yet. This
 allows prune-before-upsert to free a slot before replacing a device at the
-32-device limit. The full prune/upsert/state operation is retried periodically
+64-device limit. The full prune/upsert/state operation is retried periodically
 by Home Assistant and is idempotent.
 `reconcile_devices` remains available for backward compatibility and only
 changes enabled state.
