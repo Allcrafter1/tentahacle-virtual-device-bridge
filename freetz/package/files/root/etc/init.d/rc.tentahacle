@@ -87,8 +87,14 @@ recover_virtual_aha() {
 	return 1
 }
 
-provider_is_healthy() {
-	"$CONTROL" GET 2>/dev/null | grep -q '"connected":true'
+provider_health_state() {
+	# 0: provider control and native AHA transport are ready.
+	# 1: the provider answers, but the native transport is temporarily down.
+	# 2: the provider control channel itself does not answer correctly.
+	provider_status="$("$CONTROL" GET 2>/dev/null)" || return 2
+	printf '%s\n' "$provider_status" | grep -q '"ok":true' || return 2
+	printf '%s\n' "$provider_status" | grep -q '"connected":true' && return 0
+	return 1
 }
 
 bridge_is_running() {
@@ -151,17 +157,31 @@ watchdog_cycle() {
 		cap_log "$AHA_LOG"
 		log_ticks=0
 	fi
-	if provider_is_healthy; then
-		failures=0
+	provider_health_state
+	health_state=$?
+	if [ "$health_state" -eq 0 ]; then
+		control_failures=0
+		disconnect_failures=0
 		if ! bridge_is_running; then
 			echo "$(date): MQTT bridge is not running; restarting it" >&2
 			start_bridge || echo "$(date): MQTT bridge restart failed; retrying later" >&2
 		fi
 		return
 	fi
-	failures=$((failures + 1))
-	[ "$failures" -ge 3 ] || return
-	echo "$(date): provider health check failed three times; restarting aha" >&2
+	if [ "$health_state" -eq 1 ]; then
+		control_failures=0
+		disconnect_failures=$((disconnect_failures + 1))
+		# Device firmware updates and native DECT maintenance can recycle the
+		# AHA transport without breaking the provider. Give that path one minute
+		# to reconnect; a permanently disconnected dedicated bridge still heals.
+		[ "$disconnect_failures" -ge 12 ] || return
+		echo "$(date): provider control is responsive but AHA transport stayed disconnected for one minute; restarting aha" >&2
+	else
+		disconnect_failures=0
+		control_failures=$((control_failures + 1))
+		[ "$control_failures" -ge 3 ] || return
+		echo "$(date): provider control channel failed three checks; restarting aha" >&2
+	fi
 	log_aha_threads || :
 	if recover_virtual_aha; then
 		echo "$(date): virtual provider recovered" >&2
@@ -171,12 +191,14 @@ watchdog_cycle() {
 		echo "$(date): virtual provider recovery failed; retrying later" >&2
 		sleep 30
 	fi
-	failures=0
+	control_failures=0
+	disconnect_failures=0
 }
 
 watchdog() {
 	trap 'exit 0' INT TERM
-	failures=0
+	control_failures=0
+	disconnect_failures=0
 	log_ticks=0
 	while sleep 5; do
 		watchdog_cycle

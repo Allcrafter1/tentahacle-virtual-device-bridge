@@ -163,29 +163,56 @@ def test_watchdog_restarts_bridge_when_provider_is_still_healthy() -> None:
     script = (
         shell_function("watchdog_cycle")
         + """
-failures=2
-provider_is_healthy() { return 0; }
+control_failures=2
+disconnect_failures=2
+provider_health_state() { return 0; }
 bridge_is_running() { return 1; }
 start_bridge() { echo bridge-start; }
 date() { echo now; }
 watchdog_cycle
-echo failures:$failures
+echo failures:$control_failures/$disconnect_failures
 """
     )
     result = subprocess.run(
         ["/bin/sh", "-s"], input=script, text=True, capture_output=True, check=False
     )
     assert result.returncode == 0
-    assert result.stdout.splitlines() == ["bridge-start", "failures:0"]
+    assert result.stdout.splitlines() == ["bridge-start", "failures:0/0"]
     assert "MQTT bridge is not running" in result.stderr
+
+
+def test_provider_health_state_distinguishes_transport_from_control_failure() -> None:
+    body = shell_function("provider_health_state")
+    for output, command_status, expected in (
+        ('{"ok":true,"connected":true}', 0, 0),
+        ('{"ok":true,"connected":false}', 0, 1),
+        ('{"ok":false,"connected":true}', 0, 2),
+        ("", 1, 2),
+    ):
+        script = f"""
+CONTROL=provider_control
+provider_control() {{ printf '%s\\n' {shlex.quote(output)}; return {command_status}; }}
+{body}
+provider_health_state
+echo result:$?
+"""
+        result = subprocess.run(
+            ["/bin/sh", "-s"],
+            input=script,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.stdout.splitlines() == [f"result:{expected}"]
 
 
 def test_watchdog_recovers_provider_then_ensures_bridge_is_running() -> None:
     script = (
         shell_function("watchdog_cycle")
         + """
-failures=0
-provider_is_healthy() { return 1; }
+control_failures=0
+disconnect_failures=0
+provider_health_state() { return 2; }
 log_aha_threads() { echo thread-snapshot; }
 recover_virtual_aha() { echo provider-recover; return 0; }
 bridge_is_running() { return 1; }
@@ -194,7 +221,7 @@ date() { echo now; }
 watchdog_cycle
 watchdog_cycle
 watchdog_cycle
-echo failures:$failures
+echo failures:$control_failures/$disconnect_failures
 """
     )
     result = subprocess.run(
@@ -205,7 +232,7 @@ echo failures:$failures
         "thread-snapshot",
         "provider-recover",
         "bridge-start",
-        "failures:0",
+        "failures:0/0",
     ]
 
 
@@ -213,8 +240,9 @@ def test_watchdog_logs_threads_only_after_third_provider_failure() -> None:
     script = (
         shell_function("watchdog_cycle")
         + """
-failures=0
-provider_is_healthy() { return 1; }
+control_failures=0
+disconnect_failures=0
+provider_health_state() { return 2; }
 log_aha_threads() { echo thread-snapshot; }
 recover_virtual_aha() { return 0; }
 bridge_is_running() { return 0; }
@@ -230,6 +258,55 @@ watchdog_cycle
     )
     assert result.returncode == 0
     assert result.stdout.splitlines() == ["before-third", "thread-snapshot"]
+
+
+def test_watchdog_allows_transient_responsive_transport_disconnect() -> None:
+    script = (
+        shell_function("watchdog_cycle")
+        + """
+control_failures=2
+disconnect_failures=0
+provider_health_state() { return 1; }
+log_aha_threads() { echo unexpected-snapshot; }
+recover_virtual_aha() { echo unexpected-recovery; return 0; }
+date() { echo now; }
+i=0
+while [ "$i" -lt 11 ]; do watchdog_cycle; i=$((i + 1)); done
+echo failures:$control_failures/$disconnect_failures
+"""
+    )
+    result = subprocess.run(
+        ["/bin/sh", "-s"], input=script, text=True, capture_output=True, check=False
+    )
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == ["failures:0/11"]
+
+
+def test_watchdog_recovers_persistent_responsive_transport_disconnect() -> None:
+    script = (
+        shell_function("watchdog_cycle")
+        + """
+control_failures=0
+disconnect_failures=10
+provider_health_state() { return 1; }
+log_aha_threads() { echo thread-snapshot; }
+recover_virtual_aha() { echo provider-recover; return 0; }
+bridge_is_running() { return 0; }
+date() { echo now; }
+watchdog_cycle
+watchdog_cycle
+echo failures:$control_failures/$disconnect_failures
+"""
+    )
+    result = subprocess.run(
+        ["/bin/sh", "-s"], input=script, text=True, capture_output=True, check=False
+    )
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == [
+        "thread-snapshot",
+        "provider-recover",
+        "failures:0/0",
+    ]
 
 
 def test_initial_provider_failure_still_starts_recovery_watchdog() -> None:

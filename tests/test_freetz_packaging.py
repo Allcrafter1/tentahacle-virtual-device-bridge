@@ -26,7 +26,8 @@ def test_provider_watchdog_is_packaged() -> None:
         PACKAGE_FILES / "root" / "etc" / "init.d" / "rc.tentahacle"
     ).read_text()
 
-    assert "provider health check failed three times" in init_script
+    assert "provider control channel failed three checks" in init_script
+    assert "AHA transport stayed disconnected for one minute" in init_script
     assert '"$0" watchdog' in init_script
     assert "stop_watchdog || return 1" in init_script
     assert "stop_bridge || return 1" in init_script

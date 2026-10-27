@@ -791,15 +791,18 @@ static void watch_provider(void){
             if(time(NULL)>=retry){
                 cJSON *status=provider_query("GET");
                 const cJSON *generation=cJSON_GetObjectItemCaseSensitive(status,"generation");
-                int healthy=cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(status,"connected"))&&
+                int responsive=status&&cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(status,"ok"))&&
                     cJSON_IsNumber(generation);
+                int healthy=responsive&&cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(status,"connected"));
                 int changed=!healthy||
                     !cJSON_IsNumber(generation)||generation->valuedouble!=provider_generation;
                 cJSON_Delete(status);
                 if(!healthy){
                     health_failures++;
                     if(health_failures>=3){
-                        fprintf(stderr,"mqtt_bridge: provider control channel is unresponsive\n");
+                        fprintf(stderr,"mqtt_bridge: provider %s\n",responsive?
+                            "control is responsive but AHA transport is disconnected":
+                            "control channel is unresponsive");
                         pthread_mutex_unlock(&registry_lock);
                         break;
                     }

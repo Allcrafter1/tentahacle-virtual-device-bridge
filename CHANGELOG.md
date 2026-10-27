@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Distinguish a responsive virtual provider whose native AHA transport is
+  temporarily disconnected from an unresponsive provider control channel.
+  Native DECT maintenance such as a FRITZ!Smart Control firmware update now
+  gets a one-minute reconnect grace period instead of forcing an AHA restart
+  after 15 seconds. A genuinely unresponsive control channel still recovers
+  after three failed checks, and a persistent transport outage still recovers
+  after the bounded grace period.
+- Make MQTT bridge diagnostics report which of those two failure modes was
+  observed instead of labelling every disconnected transport as a hung
+  provider.
+
 ## 0.3.0-rc5 - 2026-10-27
 
 - Prevent provider-generated Smart Home frames from blocking indefinitely
