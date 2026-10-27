@@ -5,6 +5,21 @@ what can be proven offline from the few observations that require the dedicated
 7530, a FRITZ!Smart Control 440 and real Home Assistant entities. It is not an
 open-ended feature backlog.
 
+## Evidence snapshot — 2026-10-27
+
+| Layer | Observed status |
+|---|---|
+| Running 7530 | Legacy `rc.fritzvirtual`/`FVB` generation; MQTT bridge dated 2026-10-04 and Provider/start script dated 2026-10-07 |
+| Running Home Assistant | Loaded domain `fritz_virtual_bridge` with eight `FVB...` subentries; no loaded `tentahacle` entry |
+| Current local source | Kelvin normalization, float-cover feedback, URL-fragment support and correlated opt-in diagnostics implemented after `0.3.0-rc.1` |
+| Automated evidence | 293 Python tests passed, one Lua-dependent test skipped locally; Ruff/diff/shell/strict host and ARM checks passed; complete ASan/UBSan/fuzz/fault/provider suite passed; targeted ThreadSanitizer run passed |
+| Physical evidence for this exact source | Not yet installed or confirmed. Warm/cold, cover feedback, thermostat/recovery and native automation rows below remain release gates |
+
+Consequently, a local or automated fix must not be described as hardware-
+confirmed until the exact built source is installed and the corresponding row
+below is repeated. The archived `0.3.0-rc.1` image predates the current local
+fixes.
+
 ## Automated gate
 
 Before building firmware, all of the following must pass from a clean checkout:
