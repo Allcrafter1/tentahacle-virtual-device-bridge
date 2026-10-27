@@ -35,6 +35,7 @@ def setup_method(bridge: object, translations: AsyncMock):
         "CONF_FRITZ_URL": "fritz_url",
         "DEFAULT_FRITZ_URL": "http://fritz.box",
         "DOMAIN": "tentahacle",
+        "fritz_smart_home_url": lambda value: f"{value}/?lp=sh_dev",
         "dr": SimpleNamespace(async_get=lambda _: Mock()),
         "_async_reload_entry": Mock(),
     }

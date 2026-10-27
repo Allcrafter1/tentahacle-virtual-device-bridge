@@ -8,6 +8,7 @@ from custom_components.tentahacle.models import (
     VirtualDevice,
     bridge_details_from_discovery,
     endpoint_uid_from_token,
+    fritz_smart_home_url,
     full_color_supported,
     profile_for_domain,
     profiles_for_entity,
@@ -157,6 +158,20 @@ def test_validation_rejects_topic_injection_and_long_names() -> None:
 )
 def test_fritz_url_validation(value: str, expected: str) -> None:
     assert validate_fritz_url(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("http://fritz.box", "http://fritz.box/?lp=sh_dev"),
+        (
+            "https://192.168.178.38:8443/proxy/",
+            "https://192.168.178.38:8443/proxy/?lp=sh_dev",
+        ),
+    ],
+)
+def test_fritz_smart_home_link(value: str, expected: str) -> None:
+    assert fritz_smart_home_url(value) == expected
 
 
 @pytest.mark.parametrize(

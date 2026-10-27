@@ -104,6 +104,13 @@ def validate_fritz_url(value: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
 
 
+def fritz_smart_home_url(value: str) -> str:
+    """Build the supported FRITZ!OS Smart Home deep link from a safe base URL."""
+    parsed = urlsplit(validate_fritz_url(value))
+    path = f"{parsed.path.rstrip('/')}/"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "lp=sh_dev", ""))
+
+
 def endpoint_uid_from_token(token: str) -> str:
     """Create the stable 19-character FRITZ UID from a random token."""
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16].upper()

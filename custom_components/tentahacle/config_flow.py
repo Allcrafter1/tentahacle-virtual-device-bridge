@@ -48,6 +48,7 @@ from .const import (
 from .models import (
     bridge_details_from_discovery,
     endpoint_uid_from_token,
+    fritz_smart_home_url,
     full_color_supported,
     profile_for_domain,
     profiles_for_entity,
@@ -292,8 +293,10 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
                     unique_id=endpoint_uid,
                     description_placeholders={
                         "fritz_name": fritz_name,
-                        "fritz_url": self._get_entry().data.get(
-                            CONF_FRITZ_URL, DEFAULT_FRITZ_URL
+                        "fritz_url": fritz_smart_home_url(
+                            self._get_entry().data.get(
+                                CONF_FRITZ_URL, DEFAULT_FRITZ_URL
+                            )
                         ),
                     },
                 )
@@ -434,7 +437,9 @@ async def _async_notify_bridge_ready(
     translations = await _async_common_translations(hass)
     persistent_notification.async_create(
         hass,
-        _translation(translations, "bridge_ready_message").format(fritz_url=fritz_url),
+        _translation(translations, "bridge_ready_message").format(
+            fritz_url=fritz_smart_home_url(fritz_url)
+        ),
         _translation(translations, "bridge_ready_title"),
         f"{DOMAIN}_{bridge_id}_{_NOTIFICATION_ID_SUFFIX}",
     )
@@ -453,7 +458,7 @@ async def _async_notify_device_created(
         hass,
         _translation(translations, "device_created_message").format(
             fritz_name=fritz_name,
-            fritz_url=fritz_url,
+            fritz_url=fritz_smart_home_url(fritz_url),
         ),
         _translation(translations, "device_created_title"),
         f"{DOMAIN}_{bridge_id}_{_NOTIFICATION_ID_SUFFIX}",

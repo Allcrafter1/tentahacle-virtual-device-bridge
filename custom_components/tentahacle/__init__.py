@@ -10,6 +10,7 @@ from homeassistant.helpers.translation import async_get_translations
 
 from .bridge import TentAHAcleBridge
 from .const import CONF_BRIDGE_ID, CONF_FRITZ_URL, DEFAULT_FRITZ_URL, DOMAIN
+from .models import fritz_smart_home_url
 
 type TentAHAcleConfigEntry = ConfigEntry[TentAHAcleBridge]
 
@@ -41,7 +42,9 @@ async def async_setup_entry(
             ),
             manufacturer="TentAHAcle - Virtual Device Bridge project",
             model="Local MQTT bridge",
-            configuration_url=entry.data.get(CONF_FRITZ_URL, DEFAULT_FRITZ_URL),
+            configuration_url=fritz_smart_home_url(
+                entry.data.get(CONF_FRITZ_URL, DEFAULT_FRITZ_URL)
+            ),
         )
         entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     except BaseException:
