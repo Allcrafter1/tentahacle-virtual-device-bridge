@@ -578,15 +578,16 @@ failure modes that matter on a dedicated long-running bridge:
   review.
 
 This is the code-complete candidate, not a claim that undocumented FRITZ radio
-and UI behavior can be proven offline. The `0.3.0-rc5` image built from commit
-`c186462` and its matching Home Assistant component are installed on the
+and UI behavior can be proven offline. The `0.3.0-rc6` image built from commit
+`ae76886` and its matching Home Assistant component are installed on the
 laboratory 7530. Exact root-filesystem hashes, alternate-slot boot, persistent
-five-device registry identity, automatic provider/MQTT startup, 6690 Mesh
-presence and an HA restart passed focused live checks. Physical 440 confirmation
-remains separate and is tracked in the
+nine-device registry identity, automatic provider/MQTT startup, 6690 Mesh
+presence and an HA restart passed focused live checks. A real 440 update from
+05.38 to 05.45 also completed under the exact RC6 watchdog behavior without an
+AHA restart. Other physical 440 confirmation remains separate and is tracked in the
 [release validation checklist](release-validation.md).
 
-For this release-candidate snapshot, 297 repository tests pass; the optional
+For this release-candidate snapshot, 300 repository tests pass; the optional
 Lua 5.1 resync test skips on the current host. Ruff, shell/JSON validation,
 strict native integration tests, the focused ASan/UBSan backpressure regression
 and the ARM/Freetz 7530 image build pass. The broader native sanitizer/fuzz/fault

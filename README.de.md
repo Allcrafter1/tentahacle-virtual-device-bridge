@@ -154,15 +154,14 @@ Bekannte Grenzen des aktuellen Kandidaten:
 ### Projektstand und Mitmachen
 
 Das Projekt ist funktionierende experimentelle Software und noch kein fertiges
-Produkt. Das exakte aus Commit `c186462` gebaute Image `0.3.0-rc5` ist auf der
+Produkt. Das exakte aus Commit `ae76886` gebaute Image `0.3.0-rc6` ist auf der
 beschriebenen Labor-7530 zusammen mit der passenden Home-Assistant-Komponente
-installiert. Die fünf Geräteidentitäten und Controller-Zuweisungen aus RC4 sind
-erhalten, der alternative Boot-Slot startet sauber und die 6690 meldet alle
-virtuellen Geräte wieder als anwesend. RC5 verhindert zusätzlich den einmal im
-RC4-Praxistest beobachteten Provider-Lock-Hänger und protokolliert bei einer
-erneuten Recovery begrenzte Thread-Diagnosen. Die breiteren RC4-Funktions- und
-Recovery-Tests gelten für die unveränderten Pfade weiter; auch der gezielte
-Ersttasten-Roundtrip von RC5 mit einem direkt angemeldeten 440 hat bestanden.
+installiert. Alle neun aktuellen Geräteidentitäten blieben erhalten, der
+alternative Boot-Slot 0 startet sauber und die 6690 meldet alle virtuellen
+Geräte wieder als anwesend. RC6 unterscheidet einen antwortenden Provider mit
+vorübergehend getrennter nativer Verbindung von einem hängenden Kontrollkanal.
+Ein wiederholtes Update eines FRITZ!Smart Control 440 von 05.38 auf 05.45 lief
+ohne AHA-Neustart durch; echte Fehlerpfade behalten ihre begrenzte Recovery.
 Die genauen Nachweise stehen in der Release-Checkliste. Besonders hilfreich
 bleiben längere Praxistests und Prüfungen auf zusätzlicher unterstützter
 Hardware.

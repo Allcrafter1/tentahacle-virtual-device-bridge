@@ -9,15 +9,15 @@ open-ended feature backlog.
 
 | Layer | Observed status |
 |---|---|
-| Running 7530 | TentAHAcle `0.3.0-rc5` built from `c186462` is installed on boot slot 1; all selected root-filesystem hashes match the audited image; service, provider and MQTT bridge are running |
-| Running Home Assistant | Matching `0.3.0-rc5` component is loaded with the unchanged hub and all five device subentries |
-| Exact artifact | `TentAHAcle-0.3.0-rc5-7530-08.25.image`, SHA-256 `97f9771ad1efeab3f83216022c332dca3eca0dcc882faae1f77007dfe73a40f8` |
-| Live smoke evidence | Alternate-slot boot, delayed asynchronous provider startup, broker authentication, HA restart and the unchanged five-device registry passed. Registry SHA `8aa20784eb83901ed6aa35efb3a16b8a5cc5e6d532918f5d1a70cecc78fda331` and remote IDs 456–460 survived; the 6690 reports all five virtual parents and units present |
-| Automated evidence | Exact built commit: 297 Python tests passed and one optional Lua 5.1 test skipped. Ruff, shell/JSON/packaging checks, strict native integration tests, focused ASan/UBSan backpressure regression and the ARM GCC 13.4/Freetz build passed. The broader RC4 sanitizer/fuzz/fault evidence covers unchanged paths; LeakSanitizer/ThreadSanitizer are not claimed for this exact head |
-| Physical evidence for this exact source | Passed: `Morgenlicht` reacted on the first press of the directly paired 440 after the RC5 flash and HA restart. The broader brightness, Kelvin, cover and saved-placement canary passed on RC4 before the isolated transport change |
+| Running 7530 | TentAHAcle `0.3.0-rc6` built from `ae76886` is installed on boot slot 0; runtime hashes match the audited image; service, provider, watchdog and MQTT bridge are running |
+| Running Home Assistant | Matching `0.3.0-rc6` component is loaded with the unchanged hub and nine device subentries |
+| Exact artifact | `TentAHAcle-0.3.0-rc6-7530-08.25.image`, SHA-256 `07a4bc9bedba8d7b856cfa86c948dd478b75f284388d555511359b630b41946c` |
+| Live smoke evidence | Alternate-slot boot, delayed asynchronous provider startup, broker authentication, HA restart and the unchanged nine-device registry passed. Registry SHA `e97d5fb48dea651b4e6e34b5f524f6f36c2f06e4e88fa85b8676b02ffef02591` and remote IDs 456–464 survived; the 6690 reports all nine virtual parents present |
+| Automated evidence | Exact built commit: 300 Python tests passed and one optional Lua 5.1 test skipped. Ruff, shell/JSON/packaging checks, strict native integration tests, focused ASan/UBSan backpressure regression and the ARM GCC 13.4/Freetz build passed. The broader RC4 sanitizer/fuzz/fault evidence covers unchanged paths; LeakSanitizer/ThreadSanitizer are not claimed for this exact head |
+| Physical evidence for this exact source | Passed: the exact RC6 watchdog behavior allowed a directly paired 440 firmware update from 05.38 to 05.45 to finish without an AHA restart; all nine virtual devices returned connected. The earlier first-press, brightness, Kelvin, cover and saved-placement canaries remain applicable to unchanged paths |
 
-RC5 is installed and its software/Mesh path plus the focused physical
-post-install round trip are confirmed. Rows and source-entity variants not
+RC6 is installed and its software/Mesh path plus the real device-update
+maintenance case are confirmed. Rows and source-entity variants not
 exercised by the earlier broader canary remain at their explicit automated or
 pending qualification level below. The archived `0.3.0-rc.1` image predates
 the current fixes.

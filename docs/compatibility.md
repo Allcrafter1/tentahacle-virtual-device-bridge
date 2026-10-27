@@ -24,12 +24,11 @@ recommended latency topology: commands from the 6690 master to virtual
 endpoints on the 7530 took about 6–7 seconds in the laboratory. Direct pairing
 of the 440 with the dedicated bridge box is the target topology.
 
-The exact `0.3.0-rc5` image built from commit `c186462` is installed on the
+The exact `0.3.0-rc6` image built from commit `ae76886` is installed on the
 laboratory box together with the matching Home Assistant component. Exact
-root-filesystem hashes, alternate-slot boot, five-device registry persistence,
-automatic provider/MQTT startup, an HA restart, presence of all five virtual
-devices on the 6690 Mesh master and a first-press round trip from the directly
-paired 440 passed live checks. RC5 changes only the bounded provider-injection
-and watchdog-diagnostic paths after the broader RC4 canary; the qualification
-of profiles outside the canary is stated in
+root-filesystem hashes, alternate-slot boot, nine-device registry persistence,
+automatic provider/MQTT startup, an HA restart and presence of all nine virtual
+devices on the 6690 Mesh master passed live checks. The RC6 watchdog also let a
+real directly paired 440 complete its 05.38 to 05.45 update without restarting
+AHA. Qualification of profiles outside the canary is stated in
 [`release-validation.md`](release-validation.md).
