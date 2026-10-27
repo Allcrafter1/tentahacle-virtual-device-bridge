@@ -5,6 +5,7 @@ import pytest
 
 from custom_components.tentahacle.const import DeviceProfile
 from custom_components.tentahacle.protocol import (
+    CoverCapabilities,
     ProtocolError,
     feedback_for_state,
     parse_command,
@@ -100,6 +101,79 @@ def test_cover_actions(action: str, service: str) -> None:
     assert (
         service_call_for_command(DeviceProfile.COVER, "cover.blind", parsed)[1]
         == service
+    )
+
+
+@pytest.mark.parametrize(
+    ("position", "service"),
+    [(0, "close_cover"), (100, "open_cover")],
+)
+def test_binary_cover_maps_end_positions_to_supported_actions(
+    position: int, service: str
+) -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}",'
+        f'"position":{position},"sequence":8}}'
+    )
+    assert service_call_for_command(
+        DeviceProfile.COVER,
+        "cover.blind",
+        parsed,
+        cover_capabilities=CoverCapabilities(
+            open=True, close=True, stop=False, set_position=False
+        ),
+    ) == ("cover", service, {"entity_id": "cover.blind"})
+
+
+def test_binary_cover_rejects_unsupported_intermediate_position() -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","position":50,"sequence":8}}'
+    )
+    with pytest.raises(ProtocolError, match="intermediate positions"):
+        service_call_for_command(
+            DeviceProfile.COVER,
+            "cover.blind",
+            parsed,
+            cover_capabilities=CoverCapabilities(
+                open=True, close=True, stop=False, set_position=False
+            ),
+        )
+
+
+def test_cover_rejects_unsupported_stop() -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","action":"stop","sequence":8}}'
+    )
+    with pytest.raises(ProtocolError, match="support stop"):
+        service_call_for_command(
+            DeviceProfile.COVER,
+            "cover.blind",
+            parsed,
+            cover_capabilities=CoverCapabilities(stop=False),
+        )
+
+
+@pytest.mark.parametrize(
+    ("action", "position"), [("open", 100), ("close", 0)]
+)
+def test_position_only_cover_maps_actions_to_end_positions(
+    action: str, position: int
+) -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}",'
+        f'"action":"{action}","sequence":8}}'
+    )
+    assert service_call_for_command(
+        DeviceProfile.COVER,
+        "cover.blind",
+        parsed,
+        cover_capabilities=CoverCapabilities(
+            open=False, close=False, stop=False, set_position=True
+        ),
+    ) == (
+        "cover",
+        "set_cover_position",
+        {"entity_id": "cover.blind", "position": position},
     )
 
 

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components import mqtt
+from homeassistant.components.cover import CoverEntityFeature
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.event import (
     async_call_later,
@@ -37,6 +38,7 @@ from .const import (
     DeviceProfile,
 )
 from .protocol import (
+    CoverCapabilities,
     ProtocolError,
     feedback_for_state,
     parse_command,
@@ -238,16 +240,32 @@ class TentAHAcleBridge:
             return
         try:
             command = parse_command(message.payload, uid)
+            profile = DeviceProfile(mapping[CONF_PROFILE])
             if (
-                DeviceProfile(mapping[CONF_PROFILE]) is DeviceProfile.THERMOSTAT
+                profile is DeviceProfile.THERMOSTAT
                 and "timer_action" in command.values
             ):
                 await self._async_handle_timer(uid, mapping, command.values)
                 return
+            cover_capabilities = CoverCapabilities()
+            if profile is DeviceProfile.COVER:
+                source_state = self.hass.states.get(mapping[CONF_SOURCE_ENTITY_ID])
+                if source_state is not None:
+                    features = source_state.attributes.get("supported_features")
+                    if isinstance(features, int) and not isinstance(features, bool):
+                        cover_capabilities = CoverCapabilities(
+                            open=bool(features & CoverEntityFeature.OPEN),
+                            close=bool(features & CoverEntityFeature.CLOSE),
+                            stop=bool(features & CoverEntityFeature.STOP),
+                            set_position=bool(
+                                features & CoverEntityFeature.SET_POSITION
+                            ),
+                        )
             domain, service, data = service_call_for_command(
-                DeviceProfile(mapping[CONF_PROFILE]),
+                profile,
                 mapping[CONF_SOURCE_ENTITY_ID],
                 command,
+                cover_capabilities=cover_capabilities,
             )
         except ProtocolError as err:
             _LOGGER.warning("Ignoring invalid command for %s: %s", uid, err)

@@ -23,6 +23,16 @@ class BridgeCommand:
     values: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class CoverCapabilities:
+    """Home Assistant services supported by one mapped cover entity."""
+
+    open: bool = True
+    close: bool = True
+    stop: bool = True
+    set_position: bool = True
+
+
 def parse_command(payload: str | bytes, expected_uid: str) -> BridgeCommand:
     """Parse and validate one provider command."""
     if not isinstance(payload, (str, bytes)) or len(payload) > 4096:
@@ -52,6 +62,8 @@ def service_call_for_command(
     profile: DeviceProfile,
     entity_id: str,
     command: BridgeCommand,
+    *,
+    cover_capabilities: CoverCapabilities | None = None,
 ) -> tuple[str, str, dict[str, Any]]:
     """Translate a provider command to one Home Assistant service call."""
     values = command.values
@@ -85,14 +97,39 @@ def service_call_for_command(
         return "light", "turn_on", data
 
     if profile is DeviceProfile.COVER:
+        cover_capabilities = cover_capabilities or CoverCapabilities()
         action = values.get("action")
         if action == "stop":
+            if not cover_capabilities.stop:
+                raise ProtocolError("cover does not support stop")
             return "cover", "stop_cover", {"entity_id": entity_id}
         if action == "open":
-            return "cover", "open_cover", {"entity_id": entity_id}
+            if cover_capabilities.open:
+                return "cover", "open_cover", {"entity_id": entity_id}
+            if cover_capabilities.set_position:
+                return (
+                    "cover",
+                    "set_cover_position",
+                    {"entity_id": entity_id, "position": 100},
+                )
+            raise ProtocolError("cover does not support open")
         if action == "close":
-            return "cover", "close_cover", {"entity_id": entity_id}
+            if cover_capabilities.close:
+                return "cover", "close_cover", {"entity_id": entity_id}
+            if cover_capabilities.set_position:
+                return (
+                    "cover",
+                    "set_cover_position",
+                    {"entity_id": entity_id, "position": 0},
+                )
+            raise ProtocolError("cover does not support close")
         position = _integer(values, "position", 0, 100)
+        if not cover_capabilities.set_position:
+            if position == 0 and cover_capabilities.close:
+                return "cover", "close_cover", {"entity_id": entity_id}
+            if position == 100 and cover_capabilities.open:
+                return "cover", "open_cover", {"entity_id": entity_id}
+            raise ProtocolError("cover does not support intermediate positions")
         return (
             "cover",
             "set_cover_position",
