@@ -417,6 +417,24 @@ replays all desired mappings whenever its MQTT connection returns, and the HA
 side does the same when it sees the bridge come online, so startup order does
 not matter.
 
+### Clean transition from a 0.1.x test installation
+
+The former `fritz_virtual_bridge`/`FVB` generation is not an in-place upgrade.
+Its Home Assistant domain, MQTT namespace, persistent path and device UID
+prefix differ, and changing an `FVB...` UID to `TVB...` does not preserve the
+native parent identity. There is currently no supported importer.
+
+Before the transition, create both backups above and record the existing 440
+layout. While the old bridge is still healthy, remove its mappings through the
+old Home Assistant integration so it can remove the corresponding native
+devices. Then disable the old config entry; do not begin by deleting the whole
+entry, because its removal callback may issue authoritative cleanup. Install
+both new halves, create the TentAHAcle bridge and devices as new identities,
+and assign them on one 440 before moving further controllers. Keep the backups
+and the disabled old entry until the new setup has survived the physical and
+recovery checklist. Never copy the old registry into the new path: an empty or
+partially configured new HA entry performs an authoritative prune at startup.
+
 ## Diagnostics
 
 On the bridge, the Freetz service status and these two logs are the first

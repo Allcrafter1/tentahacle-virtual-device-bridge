@@ -435,6 +435,26 @@ Die Home-Assistant-Integration wird über HACS aktualisiert. Beide Seiten
 wiederholen ihre gewünschte Konfiguration nach einer MQTT-Wiederverbindung;
 die Startreihenfolge ist daher egal.
 
+### Sauberer Wechsel von einem 0.1.x-Teststand
+
+Die frühere Generation `fritz_virtual_bridge`/`FVB` ist kein direktes Update.
+Home-Assistant-Domain, MQTT-Namensraum, persistenter Pfad und UID-Präfix sind
+verschieden; ein Umschreiben von `FVB...` auf `TVB...` erhält die native
+Elternidentität nicht. Ein unterstützter Importer existiert derzeit nicht.
+
+Erstelle vor dem Wechsel beide oben beschriebenen Sicherungen und notiere das
+vorhandene 440-Layout. Entferne die alten Mappings bei noch funktionierendem
+Altstand über dessen Home-Assistant-Integration, damit sie die zugehörigen
+nativen Geräte sauber löschen kann. Deaktiviere anschließend den alten
+Konfigurationseintrag; lösche nicht als ersten Schritt den ganzen Eintrag, weil
+dessen Entfernung eine autoritative Bereinigung auslösen kann. Installiere
+danach beide neuen Hälften, lege Bridge und Geräte mit neuen Identitäten an und
+weise sie zunächst nur auf einem 440 zu. Behalte Sicherungen und den
+deaktivierten alten Eintrag, bis die neue Installation die Funktions- und
+Wiederherstellungsprüfung bestanden hat. Kopiere die alte Registry niemals in
+den neuen Pfad: Ein leerer oder nur teilweise konfigurierter neuer HA-Eintrag
+sendet beim Start eine autoritative Bereinigung.
+
 ## Diagnose
 
 Prüfe zuerst den Dienststatus in Freetz. Die wichtigsten Logs auf der Bridge
