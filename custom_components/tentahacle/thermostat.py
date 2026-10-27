@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -49,7 +50,7 @@ class ThermostatOverride:
             or not record.previous_hvac_mode
             or not isinstance(record.previous_temperature, (int, float))
             or isinstance(record.previous_temperature, bool)
-            or not 5 <= record.previous_temperature <= 35
+            or not _stored_temperature_valid(record.previous_temperature)
             or (
                 record.previous_preset_mode is not None
                 and not isinstance(record.previous_preset_mode, str)
@@ -79,3 +80,41 @@ def timer_request(values: dict[str, Any], now_timestamp: int) -> tuple[str, int]
     ):
         raise ProtocolError("invalid thermostat timer command")
     return action, end_time
+
+
+def override_superseded_by_state(
+    override: ThermostatOverride, state: str, attributes: dict[str, Any]
+) -> bool:
+    """Return whether a later source state should cancel a timed override."""
+    if state in {"unknown", "unavailable"}:
+        return False
+    if override.action == "cold":
+        return state != "off"
+    target = attributes.get("temperature")
+    maximum = attributes.get("max_temp")
+    if (
+        state == "off"
+        or not isinstance(target, (int, float))
+        or isinstance(target, bool)
+        or not isinstance(maximum, (int, float))
+        or isinstance(maximum, bool)
+    ):
+        return True
+    try:
+        normalized_target = float(target)
+        normalized_maximum = float(maximum)
+    except (OverflowError, ValueError):
+        return True
+    return not (
+        math.isfinite(normalized_target)
+        and math.isfinite(normalized_maximum)
+        and math.isclose(normalized_target, normalized_maximum, abs_tol=0.01)
+    )
+
+
+def _stored_temperature_valid(value: float) -> bool:
+    try:
+        normalized = float(value)
+    except OverflowError:
+        return False
+    return math.isfinite(normalized) and -100 <= normalized <= 300

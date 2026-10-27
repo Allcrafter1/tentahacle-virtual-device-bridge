@@ -50,7 +50,11 @@ from .protocol import (
     service_call_for_command,
 )
 from .schedule import schedule_shadow_payload
-from .thermostat import ThermostatOverride, timer_request
+from .thermostat import (
+    ThermostatOverride,
+    override_superseded_by_state,
+    timer_request,
+)
 
 if TYPE_CHECKING:
     from . import TentAHAcleConfigEntry
@@ -152,9 +156,11 @@ class TentAHAcleBridge:
                     uid, mapping, new_state.state, new_state.attributes
                 )
                 if DeviceProfile(mapping[CONF_PROFILE]) is DeviceProfile.THERMOSTAT:
+                    await self._async_cancel_override_if_source_changed(uid)
                     await self._async_publish_schedule(uid, mapping)
             elif DeviceProfile(mapping[CONF_PROFILE]) is DeviceProfile.THERMOSTAT:
                 await self._async_publish_feedback(uid, mapping, "unavailable", {})
+                await self._async_cancel_override_if_source_changed(uid)
                 await self._async_publish_schedule(uid, mapping)
 
         return listener
@@ -353,6 +359,34 @@ class TentAHAcleBridge:
                 }
             }
         )
+
+    async def _async_cancel_override_if_source_changed(self, uid: str) -> None:
+        """Let an explicit later HA/source change supersede a running timer."""
+        if uid not in self._overrides:
+            return
+        async with self._override_lock:
+            override = self._overrides.get(uid)
+            if override is None:
+                return
+            state = self.hass.states.get(override.entity_id)
+            if state is not None and not override_superseded_by_state(
+                override, state.state, state.attributes
+            ):
+                return
+            timer = self._override_timers.pop(uid, None)
+            if timer is not None:
+                timer()
+            self._overrides.pop(uid, None)
+            try:
+                await self._async_save_overrides()
+            except Exception:
+                self._overrides[uid] = override
+                retry_at = max(
+                    override.end_time, int(dt_util.utcnow().timestamp()) + 60
+                )
+                self._schedule_override(uid, retry_at)
+                raise
+            await self._async_publish_timer(uid, "cancel", 0)
 
     async def _async_resume_overrides(self) -> None:
         """Resume valid overrides or restore expired ones after restart."""

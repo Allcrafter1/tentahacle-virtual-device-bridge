@@ -19,6 +19,7 @@ from custom_components.tentahacle.const import (
 from custom_components.tentahacle.protocol import ProtocolError
 from custom_components.tentahacle.thermostat import (
     ThermostatOverride,
+    override_superseded_by_state,
     timer_request,
 )
 
@@ -34,6 +35,7 @@ def bridge_methods() -> dict:
         "_async_sync_bridge",
         "_async_schedule_tick",
         "_async_publish_schedule",
+        "_async_cancel_override_if_source_changed",
         "_async_apply_override",
         "_async_handle_timer",
         "_async_finish_override",
@@ -60,6 +62,7 @@ def bridge_methods() -> dict:
         "_LOGGER": Mock(),
         "ThermostatOverride": ThermostatOverride,
         "timer_request": timer_request,
+        "override_superseded_by_state": override_superseded_by_state,
         "ProtocolError": ProtocolError,
         "CONF_SOURCE_ENTITY_ID": CONF_SOURCE_ENTITY_ID,
         "CONF_PROFILE": CONF_PROFILE,
@@ -155,6 +158,7 @@ def test_removed_thermostat_state_clears_actual_and_schedule() -> None:
     }
     bridge = SimpleNamespace(
         _async_publish_feedback=AsyncMock(),
+        _async_cancel_override_if_source_changed=AsyncMock(),
         _async_publish_schedule=AsyncMock(),
     )
     listener = methods["_state_listener"](bridge, "uid", mapping)
@@ -165,6 +169,57 @@ def test_removed_thermostat_state_clears_actual_and_schedule() -> None:
     bridge._async_publish_schedule.assert_awaited_once_with(  # noqa: SLF001
         "uid", mapping
     )
+
+
+def test_external_source_change_cancels_without_restoring_old_state() -> None:
+    methods = bridge_methods()
+    cancel = Mock()
+    override = ThermostatOverride("boost", 1100, "climate.room", "heat", 20)
+    bridge = SimpleNamespace(
+        _override_lock=asyncio.Lock(),
+        _overrides={"uid": override},
+        _override_timers={"uid": cancel},
+        hass=SimpleNamespace(
+            states=SimpleNamespace(
+                get=lambda _: SimpleNamespace(
+                    state="heat", attributes={"temperature": 21, "max_temp": 35}
+                )
+            )
+        ),
+        _async_save_overrides=AsyncMock(),
+        _async_publish_timer=AsyncMock(),
+        _schedule_override=Mock(),
+    )
+    asyncio.run(methods["_async_cancel_override_if_source_changed"](bridge, "uid"))
+    cancel.assert_called_once_with()
+    assert not bridge._overrides  # noqa: SLF001
+    bridge._async_save_overrides.assert_awaited_once()  # noqa: SLF001
+    bridge._async_publish_timer.assert_awaited_once_with(  # noqa: SLF001
+        "uid", "cancel", 0
+    )
+    bridge._schedule_override.assert_not_called()  # noqa: SLF001
+
+
+def test_expected_boost_echo_does_not_cancel_override() -> None:
+    methods = bridge_methods()
+    override = ThermostatOverride("boost", 1100, "climate.room", "heat", 20)
+    bridge = SimpleNamespace(
+        _override_lock=asyncio.Lock(),
+        _overrides={"uid": override},
+        _override_timers={},
+        hass=SimpleNamespace(
+            states=SimpleNamespace(
+                get=lambda _: SimpleNamespace(
+                    state="heat", attributes={"temperature": 35, "max_temp": 35}
+                )
+            )
+        ),
+        _async_save_overrides=AsyncMock(),
+        _async_publish_timer=AsyncMock(),
+    )
+    asyncio.run(methods["_async_cancel_override_if_source_changed"](bridge, "uid"))
+    assert bridge._overrides == {"uid": override}  # noqa: SLF001
+    bridge._async_save_overrides.assert_not_awaited()  # noqa: SLF001
 
 
 def timer_bridge() -> SimpleNamespace:

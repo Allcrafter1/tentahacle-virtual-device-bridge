@@ -6,6 +6,7 @@ import pytest
 from custom_components.tentahacle.protocol import ProtocolError
 from custom_components.tentahacle.thermostat import (
     ThermostatOverride,
+    override_superseded_by_state,
     timer_request,
 )
 
@@ -63,3 +64,37 @@ def test_timer_rejects_unhashable_action(action: object) -> None:
     record["action"] = action
     with pytest.raises(ProtocolError):
         ThermostatOverride.from_json(record)
+
+
+@pytest.mark.parametrize("temperature", [68, 10**400, float("nan"), float("inf")])
+def test_override_storage_accepts_fahrenheit_but_rejects_non_finite_values(
+    temperature: float,
+) -> None:
+    record = ThermostatOverride(
+        "boost", 10_900, "climate.room", "heat", temperature
+    ).as_json()
+    if temperature == 68:
+        assert ThermostatOverride.from_json(record).previous_temperature == 68
+    else:
+        with pytest.raises(ProtocolError):
+            ThermostatOverride.from_json(record)
+
+
+@pytest.mark.parametrize(
+    ("action", "state", "attributes", "superseded"),
+    [
+        ("boost", "heat", {"temperature": 35, "max_temp": 35}, False),
+        ("boost", "heat", {"temperature": 21, "max_temp": 35}, True),
+        ("boost", "off", {"temperature": 35, "max_temp": 35}, True),
+        ("boost", "unavailable", {}, False),
+        ("cold", "off", {}, False),
+        ("cold", "heat", {"temperature": 21}, True),
+    ],
+)
+def test_external_state_change_policy(
+    action: str, state: str, attributes: dict[str, object], *, superseded: bool
+) -> None:
+    override = ThermostatOverride(
+        action, 10_900, "climate.room", "heat", 21
+    )
+    assert override_superseded_by_state(override, state, attributes) is superseded
