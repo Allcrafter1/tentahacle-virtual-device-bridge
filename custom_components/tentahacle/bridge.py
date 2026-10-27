@@ -147,6 +147,33 @@ class TentAHAcleBridge:
         async with self._sync_lock:
             pass
 
+    async def async_remove(self) -> None:
+        """Restore active timers and remove all native devices with this HA hub."""
+        # This is a fresh cleanup runtime created after the ordinary unload.
+        # Do not leave orphan retry callbacks once the config entry is gone.
+        self._stopping = True
+        await self._async_load_overrides()
+        failures: list[str] = []
+        for uid in list(self._overrides):
+            async with self._override_lock:
+                try:
+                    await self._async_finish_override(uid)
+                except Exception:
+                    failures.append(uid)
+                    _LOGGER.exception(
+                        "Unable to restore thermostat override while removing %s", uid
+                    )
+        try:
+            await self._async_publish_prune([])
+        except Exception:
+            failures.append("native registry")
+            _LOGGER.exception("Unable to prune native devices while removing bridge")
+        if failures:
+            raise RuntimeError(
+                "Bridge removal cleanup failed for: " + ", ".join(failures)
+            )
+        await self._override_store.async_remove()
+
     @callback
     def _state_listener(self, uid: str, mapping: dict[str, Any]):
         async def listener(event: Event[EventStateChangedData]) -> None:
@@ -305,10 +332,10 @@ class TentAHAcleBridge:
                 temperature_unit = (
                     source_state.attributes.get("temperature_unit")
                     if source_state is not None
-                    else self.hass.config.units.temperature_unit
+                    else None
                 )
                 if not isinstance(temperature_unit, str):
-                    temperature_unit = str(temperature_unit)
+                    temperature_unit = str(self.hass.config.units.temperature_unit)
                 normalized_maximum = None
                 if isinstance(maximum, (int, float)) and not isinstance(
                     maximum, bool
@@ -343,8 +370,6 @@ class TentAHAcleBridge:
         if not isinstance(records, dict):
             return
         for uid, value in records.items():
-            if uid not in self._mappings:
-                continue
             try:
                 self._overrides[uid] = ThermostatOverride.from_json(value)
             except ProtocolError as err:
@@ -369,7 +394,11 @@ class TentAHAcleBridge:
             if override is None:
                 return
             state = self.hass.states.get(override.entity_id)
-            if state is not None and not override_superseded_by_state(
+            if state is None:
+                # Entity removal/reload is not an explicit user command. Keep
+                # the snapshot so it can still be restored after recovery.
+                return
+            if not override_superseded_by_state(
                 override, state.state, state.attributes
             ):
                 return
@@ -398,14 +427,18 @@ class TentAHAcleBridge:
                 override = self._overrides.get(uid)
                 if override is None:
                     continue
-                mapping = self._mappings.get(uid)
-                if (
-                    mapping is None
-                    or mapping[CONF_SOURCE_ENTITY_ID] != override.entity_id
-                ):
-                    self._overrides.pop(uid, None)
-                    continue
                 try:
+                    mapping = self._mappings.get(uid)
+                    if (
+                        mapping is None
+                        or DeviceProfile(mapping[CONF_PROFILE])
+                        is not DeviceProfile.THERMOSTAT
+                        or mapping[CONF_SOURCE_ENTITY_ID] != override.entity_id
+                    ):
+                        # A deleted or rebound mapping must not leave its previous
+                        # real climate entity stranded at Boost/MAX or cold/OFF.
+                        await self._async_finish_override(uid)
+                        continue
                     if override.end_time <= int(dt_util.utcnow().timestamp()):
                         await self._async_finish_override(uid)
                     else:
@@ -627,11 +660,15 @@ class TentAHAcleBridge:
 
     async def _async_publish_reconciliation(self) -> None:
         """Permanently remove bridge devices no longer mapped by this entry."""
+        await self._async_publish_prune(sorted(self._mappings))
+
+    async def _async_publish_prune(self, keep_uids: list[str]) -> None:
+        """Publish one authoritative native-device set."""
         payload = {
             "schema_version": PROTOCOL_VERSION,
             "request_id": str(uuid.uuid4()),
             "operation": "prune_devices",
-            "keep_uids": sorted(self._mappings),
+            "keep_uids": keep_uids,
         }
         await mqtt.async_publish(
             self.hass,
@@ -654,10 +691,10 @@ class TentAHAcleBridge:
             attributes,
             color_full=self._mapping_color_full(mapping),
             temperature_unit=(
-                str(
-                    attributes.get(
-                        "temperature_unit", self.hass.config.units.temperature_unit
-                    )
+                (
+                    attributes.get("temperature_unit")
+                    if isinstance(attributes.get("temperature_unit"), str)
+                    else str(self.hass.config.units.temperature_unit)
                 )
                 if DeviceProfile(mapping[CONF_PROFILE]) is DeviceProfile.THERMOSTAT
                 else "°C"

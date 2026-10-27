@@ -48,6 +48,7 @@ from .const import (
 from .models import (
     bridge_details_from_discovery,
     climate_entity_supported,
+    cover_entity_supported,
     endpoint_uid_from_token,
     fritz_smart_home_url,
     full_color_supported,
@@ -222,6 +223,8 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
             entity_id = user_input[CONF_SOURCE_ENTITY_ID]
             if self._source_in_use(entity_id):
                 errors[CONF_SOURCE_ENTITY_ID] = "already_mapped"
+            elif not self._cover_source_supported(entity_id):
+                errors[CONF_SOURCE_ENTITY_ID] = "incompatible_cover"
             elif not self._thermostat_source_supported(entity_id):
                 errors[CONF_SOURCE_ENTITY_ID] = "incompatible_thermostat"
             else:
@@ -257,6 +260,8 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
         if source_state is None:
             return self.async_abort(reason="source_entity_missing")
         domain = self._source_entity_id.partition(".")[0]
+        if not self._cover_source_supported(self._source_entity_id):
+            return self.async_abort(reason="incompatible_cover")
         if not self._thermostat_source_supported(self._source_entity_id):
             return self.async_abort(reason="incompatible_thermostat")
         supported_color_modes = source_state.attributes.get(
@@ -270,6 +275,8 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             if user_input[CONF_PROFILE] not in profiles:
                 errors[CONF_PROFILE] = "incompatible_profile"
+            elif not self._cover_source_supported(self._source_entity_id):
+                errors[CONF_PROFILE] = "incompatible_cover"
             elif not self._thermostat_source_supported(self._source_entity_id):
                 errors[CONF_PROFILE] = "incompatible_thermostat"
             elif not _valid_name(user_input[CONF_FRITZ_NAME]):
@@ -359,6 +366,11 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
             ):
                 errors[CONF_SOURCE_ENTITY_ID] = "already_mapped"
             elif (
+                profile is DeviceProfile.COVER
+                and not self._cover_source_supported(entity_id)
+            ):
+                errors[CONF_SOURCE_ENTITY_ID] = "incompatible_cover"
+            elif (
                 profile is DeviceProfile.THERMOSTAT
                 and not self._thermostat_source_supported(entity_id)
             ):
@@ -436,6 +448,15 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
         return climate_entity_supported(
             source_state.attributes,
             fallback_temperature_unit=str(self.hass.config.units.temperature_unit),
+        )
+
+    def _cover_source_supported(self, entity_id: str) -> bool:
+        """Require controls for both FRITZ cover endpoints."""
+        if entity_id.partition(".")[0] != "cover":
+            return True
+        source_state = self.hass.states.get(entity_id)
+        return source_state is not None and cover_entity_supported(
+            source_state.attributes
         )
 
 

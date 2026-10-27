@@ -86,8 +86,11 @@ def test_override_storage_accepts_fahrenheit_but_rejects_non_finite_values(
         ("boost", "heat", {"temperature": 35, "max_temp": 35}, False),
         ("boost", "heat", {"temperature": 21, "max_temp": 35}, True),
         ("boost", "off", {"temperature": 35, "max_temp": 35}, True),
+        ("boost", "auto", {"temperature": 35, "max_temp": 35}, True),
         ("boost", "unavailable", {}, False),
         ("cold", "off", {}, False),
+        ("cold", "off", {"temperature": 21}, False),
+        ("cold", "off", {"temperature": 18}, True),
         ("cold", "heat", {"temperature": 21}, True),
     ],
 )

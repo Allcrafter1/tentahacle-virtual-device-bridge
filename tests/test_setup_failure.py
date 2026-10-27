@@ -74,6 +74,33 @@ def test_partial_setup_cleans_bridge_before_retry(failure: str) -> None:
         assert not hasattr(entry, "runtime_data")
 
 
+def test_remove_entry_uses_dedicated_destructive_cleanup() -> None:
+    source = Path("custom_components/tentahacle/__init__.py")
+    tree = ast.parse(source.read_text())
+    method = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "async_remove_entry"
+    )
+    cleanup = SimpleNamespace(async_remove=AsyncMock())
+    namespace = {"TentAHAcleBridge": Mock(return_value=cleanup)}
+    module = ast.Module(
+        body=[
+            ast.ImportFrom(
+                module="__future__", names=[ast.alias(name="annotations")], level=0
+            ),
+            method,
+        ],
+        type_ignores=[],
+    )
+    exec(compile(ast.fix_missing_locations(module), str(source), "exec"), namespace)  # noqa: S102
+    hass = object()
+    entry = object()
+    asyncio.run(namespace["async_remove_entry"](hass, entry))
+    namespace["TentAHAcleBridge"].assert_called_once_with(hass, entry)
+    cleanup.async_remove.assert_awaited_once_with()
+
+
 def test_failed_real_start_releases_created_subscriptions_and_timer() -> None:
     """Exercise real start/stop with failure after all subscriptions exist."""
     source = Path("custom_components/tentahacle/bridge.py")

@@ -16,6 +16,9 @@ from .const import PROTOCOL_VERSION, DeviceProfile
 _BRIDGE_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{2,31}$")
 _ENDPOINT_UID = re.compile(r"^TVB[0-9A-F]{16}$")
 _CLIMATE_TARGET_TEMPERATURE = 1
+_COVER_OPEN = 1
+_COVER_CLOSE = 2
+_COVER_SET_POSITION = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +201,16 @@ def climate_entity_supported(
     if normalized_step is None or normalized_step <= 0 or normalized_step > 0.5:
         return False
     return math.isclose(0.5 / normalized_step, round(0.5 / normalized_step))
+
+
+def cover_entity_supported(attributes: Mapping[str, object]) -> bool:
+    """Return whether a cover can implement both FRITZ endpoint commands."""
+    features = attributes.get("supported_features")
+    if not isinstance(features, int) or isinstance(features, bool):
+        return False
+    can_open = bool(features & (_COVER_OPEN | _COVER_SET_POSITION))
+    can_close = bool(features & (_COVER_CLOSE | _COVER_SET_POSITION))
+    return can_open and can_close
 
 
 def profiles_for_entity(

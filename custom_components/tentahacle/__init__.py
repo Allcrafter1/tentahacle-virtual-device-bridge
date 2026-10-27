@@ -64,6 +64,13 @@ async def async_unload_entry(
     return True
 
 
+async def async_remove_entry(
+    hass: HomeAssistant, entry: TentAHAcleConfigEntry
+) -> None:
+    """Restore active overrides and prune native devices when deleting a hub."""
+    await TentAHAcleBridge(hass, entry).async_remove()
+
+
 async def _async_reload_entry(
     hass: HomeAssistant, entry: TentAHAcleConfigEntry
 ) -> None:

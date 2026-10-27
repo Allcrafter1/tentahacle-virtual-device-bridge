@@ -8,6 +8,7 @@ from custom_components.tentahacle.models import (
     VirtualDevice,
     bridge_details_from_discovery,
     climate_entity_supported,
+    cover_entity_supported,
     endpoint_uid_from_token,
     fritz_smart_home_url,
     full_color_supported,
@@ -212,6 +213,29 @@ def test_climate_validation_uses_home_assistant_unit_fallback() -> None:
             "target_temp_step": 0.5,
         },
         fallback_temperature_unit="°F",
+    )
+
+
+@pytest.mark.parametrize(
+    ("supported_features", "supported"),
+    [
+        (1 | 2, True),  # direct open and close
+        (4, True),  # both endpoints through numeric positioning
+        (1 | 4, True),  # close can fall back to position 0
+        (2 | 4, True),  # open can fall back to position 100
+        (0, False),
+        (1, False),
+        (2, False),
+        (16 | 32 | 128, False),  # tilt-only cover
+        (True, False),
+    ],
+)
+def test_cover_validation_requires_both_fritz_endpoints(
+    supported_features: int, *, supported: bool
+) -> None:
+    assert (
+        cover_entity_supported({"supported_features": supported_features})
+        is supported
     )
 
 

@@ -89,11 +89,25 @@ def override_superseded_by_state(
     if state in {"unknown", "unavailable"}:
         return False
     if override.action == "cold":
-        return state != "off"
+        if state != "off":
+            return True
+        target = attributes.get("temperature")
+        if not isinstance(target, (int, float)) or isinstance(target, bool):
+            return False
+        try:
+            normalized_target = float(target)
+            previous_target = float(override.previous_temperature)
+        except (OverflowError, ValueError):
+            return False
+        return bool(
+            math.isfinite(normalized_target)
+            and math.isfinite(previous_target)
+            and not math.isclose(normalized_target, previous_target, abs_tol=0.01)
+        )
     target = attributes.get("temperature")
     maximum = attributes.get("max_temp")
     if (
-        state == "off"
+        state != "heat"
         or not isinstance(target, (int, float))
         or isinstance(target, bool)
         or not isinstance(maximum, (int, float))
