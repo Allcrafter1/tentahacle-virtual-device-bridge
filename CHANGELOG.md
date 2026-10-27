@@ -19,11 +19,16 @@
   across the Provider, MQTT bridge and Home Assistant command path.
 - Correct the documentation: 32 devices is the current implementation limit,
   not a demonstrated native maximum.
+- Use the Freetz-compatible prerelease version `0.3.0-rc2` and guard the
+  generated package list against accidentally registering a versioned package
+  name instead of `tentahacle`.
 
-These changes pass the automated source tests but have **not** yet been
-installed on the laboratory 7530 or physically confirmed with the 440. The
-running laboratory system still uses the earlier `fritz_virtual_bridge`/`FVB`
-generation. Do not treat this section as a release or rollout approval.
+The exact `a47e330` candidate is installed on the laboratory 7530 together
+with the matching Home Assistant integration. Service/provider startup, MQTT
+authentication and discovery, persistent virtual-device provisioning and the
+FRITZ!OS Smart Home deep link passed live smoke checks. Physical behavior on a
+440 is not yet confirmed for this exact candidate, so this remains a
+laboratory release candidate rather than a rollout approval.
 
 ## 0.3.0-rc.1 - 2026-10-27
 

@@ -9,16 +9,16 @@ open-ended feature backlog.
 
 | Layer | Observed status |
 |---|---|
-| Running 7530 | Legacy `rc.fritzvirtual`/`FVB` generation; MQTT bridge dated 2026-10-04 and Provider/start script dated 2026-10-07 |
-| Running Home Assistant | Loaded domain `fritz_virtual_bridge` with eight `FVB...` subentries; no loaded `tentahacle` entry |
-| Current local source | Kelvin normalization, float-cover feedback, URL-fragment support and correlated opt-in diagnostics implemented after `0.3.0-rc.1` |
-| Automated evidence | 293 Python tests passed, one Lua-dependent test skipped locally; Ruff/diff/shell/strict host and ARM checks passed; complete ASan/UBSan/fuzz/fault/provider suite passed; targeted ThreadSanitizer run passed |
-| Physical evidence for this exact source | Not yet installed or confirmed. Warm/cold, cover feedback, thermostat/recovery and native automation rows below remain release gates |
+| Running 7530 | TentAHAcle `0.3.0-rc2` built from `a47e330` is installed; service and provider are running and MQTT reports connected |
+| Running Home Assistant | Matching `0.3.0-rc2` component is loaded; the old `fritz_virtual_bridge` entry is disabled; `Morgenlicht` and `Testrollladen` are provisioned as two canaries |
+| Exact artifact | `TentAHAcle-0.3.0-rc2-7530-08.25.image`, SHA-256 `b1092993dbc137f27a9ab0fbb16d8b304b9db012f286c964a869ada79ecdbf51` |
+| Live smoke evidence | Freetz package registration, service/provider startup, migrated broker authentication, MQTT discovery, persistent registry and the Smart Home fragment deep link passed |
+| Automated evidence | Exact head: 294 Python tests passed, one Lua-dependent test skipped, plus Ruff and packaging regression checks. The code candidate passed the strict native, ASan/UBSan, fuzz, fault-injection, analyzer and ARM checks; the packaging-only final commit was rebuilt for ARM. LSan/TSan could not run reliably in the current host environment and are not claimed for this exact head |
+| Physical evidence for this exact source | Not yet confirmed with the 440. Warm/cold, dimming, cover feedback, thermostat/recovery and native automation rows below remain release gates |
 
-Consequently, a local or automated fix must not be described as hardware-
-confirmed until the exact built source is installed and the corresponding row
-below is repeated. The archived `0.3.0-rc.1` image predates the current local
-fixes.
+Consequently, installation and a live smoke check must not be described as
+hardware-confirmed until the corresponding row below is repeated with a 440.
+The archived `0.3.0-rc.1` image predates the current fixes.
 
 ## Automated gate
 
@@ -115,11 +115,10 @@ remaining six 440s.
 
 ## Release decision
 
-The candidate is ready to flash to the laboratory 7530 when the automated gate
-is green, the firmware artifact was built from the exact reviewed commit and a
-backup/cutover plan protects the currently installed legacy identities. It is
-ready for seven-controller production use and public release only when the
-installed-version check plus the physical function and recovery matrices have
-no critical failure or reproducible major functional defect. Cosmetic
-limitations above are acceptable when documented; new speculative enhancements
-are not release blockers.
+The candidate has been flashed to the laboratory 7530 and its basic runtime
+path has passed the smoke check. The next gate is the focused physical matrix
+with one directly paired 440, followed by the bounded recovery checks. It is
+ready for seven-controller production use and public release only when those
+checks have no critical failure or reproducible major functional defect.
+Cosmetic limitations above are acceptable when documented; new speculative
+enhancements are not release blockers.

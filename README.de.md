@@ -155,11 +155,12 @@ Bekannte Grenzen des aktuellen Kandidaten:
 ### Projektstand und Mitmachen
 
 Das Projekt ist funktionierende experimentelle Software und noch kein fertiges
-Produkt. Der auf dem beschriebenen Laboraufbau laufende Altstand ist nicht mit
-dem jeweils neuesten Quellstand gleichzusetzen. Neue Korrekturen gelten erst
-nach Installation und einem gezielten Hardwaretest als praktisch bestätigt.
+Produkt. Der exakte Kandidat `0.3.0-rc2` ist auf dem beschriebenen Laboraufbau
+installiert; Dienst, MQTT und Gerätebereitstellung haben dort den
+Laufzeit-Smoke-Test bestanden. Neue Korrekturen gelten trotzdem erst nach dem
+gezielten Test dieser exakten Version mit einem 440 als praktisch bestätigt.
 Vor einem breiten Rollout fehlen noch gezielte Hardwaretests für wiederholtes
-Warm/Kalt und mehrere Farben, binäre und positionierbare Rollläden,
+Warm/Kalt, Dimmen und mehrere Farben, binäre und positionierbare Rollläden,
 vollständiges Thermostat-Timer-/Neustartverhalten sowie je eine harmlose native
 Vorlage, ein Szenario und eine Routine. Besonders hilfreich sind längere
 Praxistests und Prüfungen auf zusätzlicher unterstützter Hardware.

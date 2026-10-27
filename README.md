@@ -136,15 +136,16 @@ Known boundaries of the current candidate:
 
 ### Project status and contributions
 
-This is working experimental software, not a finished appliance. The version
-running on the documented laboratory setup is not automatically the same as
-the newest source revision. A correction is considered physically confirmed
-only after that exact revision has been installed and run through the focused
-hardware check. Before broad deployment, the release candidate still needs
-checks for repeated warm/cold and color changes, binary and positionable
-covers, complete thermostat timer/restart behavior, and one harmless native
-template, scene and routine. Useful contributions include longer real-world
-testing and verification on additional supported hardware.
+This is working experimental software, not a finished appliance. The exact
+`0.3.0-rc2` candidate is installed on the documented laboratory setup and its
+basic service, MQTT and provisioning paths passed live smoke checks. A
+correction is considered physically confirmed only after that exact revision
+has also run through the focused 440 hardware check. Before broad deployment,
+the candidate still needs checks for repeated warm/cold, dimming and color
+changes, binary and positionable covers, complete thermostat timer/restart
+behavior, and one harmless native template, scene and routine. Useful
+contributions include longer real-world testing and verification on additional
+supported hardware.
 Please
 report reproducible findings in [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues).
 

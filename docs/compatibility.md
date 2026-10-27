@@ -24,11 +24,12 @@ recommended latency topology: commands from the 6690 master to virtual
 endpoints on the 7530 took about 6–7 seconds in the laboratory. Direct pairing
 of the 440 with the dedicated bridge box is the target topology.
 
-The 0.3.0 candidate source extends the existing profile round trips and bounded
-recovery/security audit. Its host, parser, fault-injection and sanitizer suites
-pass, but this does not establish that the same revision is installed on the
-laboratory box. Physical qualification of color, cover and thermostat paths,
-recovery cases and native FRITZ!OS automations remains tracked in
+The exact `0.3.0-rc2` candidate from commit `a47e330` is installed on the
+laboratory box together with the matching Home Assistant component. Its basic
+service/provider, MQTT discovery, persistent provisioning and deep-link paths
+passed live smoke checks. This does not establish physical 440 behavior:
+qualification of color, cover and thermostat paths, recovery cases and native
+FRITZ!OS automations remains tracked in
 [`release-validation.md`](release-validation.md). Until the exact built
 revision passes that checklist, it is neither the recommended seven-controller
 production rollout nor a final release.

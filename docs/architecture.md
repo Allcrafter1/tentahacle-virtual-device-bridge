@@ -576,11 +576,15 @@ failure modes that matter on a dedicated long-running bridge:
   review.
 
 This is the code-complete candidate, not a claim that undocumented FRITZ radio
-and UI behavior can be proven offline. The remaining physical gates and exact
-expected observations are kept in the
-[release validation checklist](release-validation.md).
+and UI behavior can be proven offline. Commit `a47e330` and its matching Home
+Assistant component are installed on the laboratory 7530; service/provider,
+MQTT discovery, persistent provisioning and the Smart Home deep link passed a
+live smoke check. Physical 440 confirmation remains separate and is tracked in
+the [release validation checklist](release-validation.md).
 
-For this release-candidate snapshot, 257 repository tests pass; the optional
-Lua 5.1 resync test skips only on hosts without that interpreter and is run in
-CI. Ruff, shell/JSON validation, the complete native sanitizer/fuzz suite and
-the ARM/Freetz 7530 image build also pass.
+For this release-candidate snapshot, 294 repository tests pass; the optional
+Lua 5.1 resync test skips on the current host. Ruff, shell/JSON validation, the
+complete native ASan/UBSan/fuzz/fault/analyzer suite and the ARM/Freetz 7530
+image build also pass. The final packaging-only commit was covered by its
+regression test and a fresh ARM image build; unavailable LSan/TSan host runs are
+not claimed for that exact head.
