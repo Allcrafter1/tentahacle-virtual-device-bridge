@@ -572,21 +572,21 @@ failure modes that matter on a dedicated long-running bridge:
   full bounded completion window.
 - MQTT Hue/Saturation input no longer relies on overflowing `scanf` numeric
   conversions. The complete native suite passes strict warnings plus
-  ASan/UBSan/LeakSanitizer, including the binary/control fuzz loops and all
+  ASan/UBSan, including the binary/control fuzz loops and all
   dynamic/legacy provider self-tests. No further confirmed memory-corruption,
   invalid-pointer, data-race or code-execution defect was found in the bounded
   review.
 
 This is the code-complete candidate, not a claim that undocumented FRITZ radio
-and UI behavior can be proven offline. Commit `a47e330` and its matching Home
-Assistant component are installed on the laboratory 7530; service/provider,
-MQTT discovery, persistent provisioning and the Smart Home deep link passed a
-live smoke check. Physical 440 confirmation remains separate and is tracked in
+and UI behavior can be proven offline. Commit `431eadb` (`0.3.0-rc4`) and its
+matching Home Assistant component are installed on the laboratory 7530. Exact
+root-filesystem hashes, cold boot, service restart, MQTT-process recovery,
+virtual-`aha` recovery, persistent registry identity and an HA restart passed
+live checks. Physical 440 confirmation remains separate and is tracked in
 the [release validation checklist](release-validation.md).
 
-For this release-candidate snapshot, 294 repository tests pass; the optional
+For this release-candidate snapshot, 296 repository tests pass; the optional
 Lua 5.1 resync test skips on the current host. Ruff, shell/JSON validation, the
-complete native ASan/UBSan/fuzz/fault/analyzer suite and the ARM/Freetz 7530
-image build also pass. The final packaging-only commit was covered by its
-regression test and a fresh ARM image build; unavailable LSan/TSan host runs are
-not claimed for that exact head.
+complete native ASan/UBSan/fuzz/fault suite and the ARM/Freetz 7530 image build
+also pass. LeakSanitizer and ThreadSanitizer are not claimed for this exact
+head.

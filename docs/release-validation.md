@@ -9,12 +9,12 @@ open-ended feature backlog.
 
 | Layer | Observed status |
 |---|---|
-| Running 7530 | TentAHAcle `0.3.0-rc2` built from `a47e330` is installed; service and provider are running and MQTT reports connected |
-| Running Home Assistant | Matching `0.3.0-rc2` component is loaded; the old `fritz_virtual_bridge` entry is disabled; `Morgenlicht` and `Testrollladen` are provisioned as two canaries |
-| Exact artifact | `TentAHAcle-0.3.0-rc2-7530-08.25.image`, SHA-256 `b1092993dbc137f27a9ab0fbb16d8b304b9db012f286c964a869ada79ecdbf51` |
-| Live smoke evidence | Freetz package registration, service/provider startup, migrated broker authentication, MQTT discovery, persistent registry and the Smart Home fragment deep link passed |
-| Automated evidence | Exact head: 294 Python tests passed, one Lua-dependent test skipped, plus Ruff and packaging regression checks. The code candidate passed the strict native, ASan/UBSan, fuzz, fault-injection, analyzer and ARM checks; the packaging-only final commit was rebuilt for ARM. LSan/TSan could not run reliably in the current host environment and are not claimed for this exact head |
-| Physical evidence for this exact source | Not yet confirmed with the 440. Warm/cold, dimming, cover feedback, thermostat/recovery and native automation rows below remain release gates |
+| Running 7530 | TentAHAcle `0.3.0-rc4` built from `431eadb` is installed on boot slot 0; exact root-filesystem hashes match the audited image; service, provider and MQTT bridge are running |
+| Running Home Assistant | Matching `0.3.0-rc4` component is loaded with the unchanged hub and two subentries; the old `fritz_virtual_bridge` entry remains disabled; `Morgenlicht` and `Testrollladen` are the two canaries |
+| Exact artifact | `TentAHAcle-0.3.0-rc4-7530-08.25.image`, SHA-256 `90e87a18090e8391a9b714894c53d63852667de62e735805c9fa917472585333` |
+| Live smoke evidence | Cold boot, package registration, delayed asynchronous service/provider startup, broker authentication, persistent registry, clean explicit service restart, MQTT-process watchdog restart, virtual-`aha` watchdog recovery and an HA restart passed. The two UIDs/remote IDs and registry SHA remained unchanged; native resync found all three saved widget placements |
+| Automated evidence | Exact head: 296 Python tests passed and one optional Lua 5.1 test skipped. Ruff, JSON/shell/packaging checks, strict native tests, ASan/UBSan, deterministic fuzz/fault tests, independent capacity review and the ARM GCC 13.4/Freetz build passed. LeakSanitizer/ThreadSanitizer are not claimed for this exact head |
+| Physical evidence for this exact source | Pending one focused 440 canary check: saved widget placement after reboot/recovery, both native Kelvin endpoint transitions, one brightness up/down and cover open/close if that profile will be deployed |
 
 Consequently, installation and a live smoke check must not be described as
 hardware-confirmed until the corresponding row below is repeated with a 440.
@@ -26,8 +26,9 @@ Before building firmware, all of the following must pass from a clean checkout:
 
 - complete Python/Lua test suite and Ruff;
 - shell syntax and Freetz packaging/restart tests;
-- native host suite with strict warnings, ASan, UBSan (including float casts)
-  and LeakSanitizer;
+- native host suite with strict warnings, ASan and UBSan (including float
+  casts); run LeakSanitizer as an additional check on a host where its runtime
+  is reliable, and state explicitly when it was not run for the exact head;
 - deterministic registry/parser/dispatcher fuzz loops, dynamic and legacy
   provider self-tests and the byte-level golden fixture;
 - exact supported `aha` fingerprint and successful ARM/Freetz package build;
@@ -114,10 +115,10 @@ remaining six 440s.
 
 ## Release decision
 
-The candidate has been flashed to the laboratory 7530 and its basic runtime
-path has passed the smoke check. The next gate is the focused physical matrix
-with one directly paired 440, followed by the bounded recovery checks. It is
-ready for seven-controller production use and public release only when those
-checks have no critical failure or reproducible major functional defect.
+The candidate has been flashed to the laboratory 7530 and its runtime and
+bounded recovery paths have passed. The only remaining rollout gate is the
+focused physical canary check above with one directly paired 440. It is ready
+for seven-controller production use and public release only when that check has
+no critical failure or reproducible major functional defect.
 Cosmetic limitations above are acceptable when documented; new speculative
 enhancements are not release blockers.

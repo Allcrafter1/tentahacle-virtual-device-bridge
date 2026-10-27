@@ -154,15 +154,16 @@ Bekannte Grenzen des aktuellen Kandidaten:
 ### Projektstand und Mitmachen
 
 Das Projekt ist funktionierende experimentelle Software und noch kein fertiges
-Produkt. Der exakte Kandidat `0.3.0-rc2` ist auf dem beschriebenen Laboraufbau
-installiert; Dienst, MQTT und Gerätebereitstellung haben dort den
-Laufzeit-Smoke-Test bestanden. Neue Korrekturen gelten trotzdem erst nach dem
-gezielten Test dieser exakten Version mit einem 440 als praktisch bestätigt.
-Vor einem breiten Rollout fehlen noch gezielte Hardwaretests für wiederholtes
-Warm/Kalt, Dimmen und mehrere Farben, binäre und positionierbare Rollläden,
-vollständiges Thermostat-Timer-/Neustartverhalten sowie je eine harmlose native
-Vorlage, ein Szenario und eine Routine. Besonders hilfreich sind längere
-Praxistests und Prüfungen auf zusätzlicher unterstützter Hardware.
+Produkt. Der exakte Kandidat `0.3.0-rc4` aus Commit `431eadb` ist auf der
+beschriebenen Labor-7530 zusammen mit der passenden Home-Assistant-Komponente
+installiert. Kaltstart, expliziter Dienstneustart, Wiederherstellung von MQTT-
+Prozess und virtuellem `aha`, Registry-Persistenz sowie ein HA-Neustart haben
+Live-Tests bestanden. Neue Korrekturen gelten trotzdem erst nach dem gezielten
+Test dieser exakten Version mit einem 440 als praktisch bestätigt. Vor einem
+breiten Rollout fehlen deshalb noch der kurze Kelvin-Endpunkt-/Zuweisungstest
+aus der Release-Checkliste und ein knapper Helligkeits-/Rollladen-Smoke-Test.
+Besonders hilfreich sind längere Praxistests und Prüfungen auf zusätzlicher
+unterstützter Hardware.
 Nachvollziehbare Ergebnisse bitte über
 [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues) melden.
 

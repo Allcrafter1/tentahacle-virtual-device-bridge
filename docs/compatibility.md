@@ -24,12 +24,12 @@ recommended latency topology: commands from the 6690 master to virtual
 endpoints on the 7530 took about 6–7 seconds in the laboratory. Direct pairing
 of the 440 with the dedicated bridge box is the target topology.
 
-The exact `0.3.0-rc2` candidate from commit `a47e330` is installed on the
-laboratory box together with the matching Home Assistant component. Its basic
-service/provider, MQTT discovery, persistent provisioning and deep-link paths
-passed live smoke checks. This does not establish physical 440 behavior:
-qualification of color, cover and thermostat paths, recovery cases and native
-FRITZ!OS automations remains tracked in
+The exact `0.3.0-rc4` candidate from commit `431eadb` is installed on the
+laboratory box together with the matching Home Assistant component. Exact
+root-filesystem hashes, cold boot, service restart, MQTT-process recovery,
+virtual-`aha` recovery, registry persistence and an HA restart passed live
+checks. This does not by itself establish physical 440 behavior: the focused
+Kelvin endpoint and saved-widget check remains tracked in
 [`release-validation.md`](release-validation.md). Until the exact built
 revision passes that checklist, it is neither the recommended seven-controller
 production rollout nor a final release.
