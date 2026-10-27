@@ -138,6 +138,21 @@ tvb_registry_result tvb_registry_set_enabled(tvb_device_registry *r, uint64_t re
     d = &r->devices[found - r->devices]; d->enabled = (uint8_t)enabled;
     d->revision = ++r->revision; return TVB_REGISTRY_OK;
 }
+tvb_registry_result tvb_registry_set_color_full(tvb_device_registry *r, uint64_t rev,
+    const char *uid, int color_full) {
+    const tvb_device *found; tvb_device *d;
+    tvb_registry_result result = check(r, rev);
+    if (result != TVB_REGISTRY_OK) return result;
+    if (!tvb_registry_valid_uid(uid) || (color_full != 0 && color_full != 1))
+        return TVB_REGISTRY_INVALID;
+    found = tvb_registry_find(r, uid); if (!found) return TVB_REGISTRY_NOT_FOUND;
+    if (color_full && found->profile != TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)
+        return TVB_REGISTRY_INVALID;
+    if (found->color_full == color_full) return TVB_REGISTRY_OK;
+    if (r->revision == UINT64_MAX) return TVB_REGISTRY_EXHAUSTED;
+    d = &r->devices[found - r->devices]; d->color_full = (uint8_t)color_full;
+    d->revision = ++r->revision; return TVB_REGISTRY_OK;
+}
 tvb_registry_result tvb_registry_remove(tvb_device_registry *r, uint64_t rev,
     const char *uid) {
     const tvb_device *found; size_t index;

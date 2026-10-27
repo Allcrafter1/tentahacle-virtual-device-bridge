@@ -64,6 +64,7 @@ def service_call_for_command(
     command: BridgeCommand,
     *,
     cover_capabilities: CoverCapabilities | None = None,
+    color_full: bool = False,
 ) -> tuple[str, str, dict[str, Any]]:
     """Translate a provider command to one Home Assistant service call."""
     values = command.values
@@ -77,66 +78,11 @@ def service_call_for_command(
         DeviceProfile.DIMMABLE_LIGHT,
         DeviceProfile.COLOR_TEMPERATURE_LIGHT,
     }:
-        state = _binary_state(values)
-        # AHA reports the current relay state together with value commands. A
-        # brightness or colour-temperature command received while the light is
-        # off is still a request to apply that value (and turn the light on),
-        # not a state-only OFF command.
-        has_value_command = "level" in values or "color_temperature" in values
-        if not state and not has_value_command:
-            return "light", "turn_off", {"entity_id": entity_id}
-        data: dict[str, Any] = {"entity_id": entity_id}
-        if "level" in values:
-            data["brightness_pct"] = _integer(values, "level", 0, 100)
-        if "color_temperature" in values:
-            if profile is not DeviceProfile.COLOR_TEMPERATURE_LIGHT:
-                raise ProtocolError("color temperature is not enabled")
-            data["color_temp_kelvin"] = _integer(
-                values, "color_temperature", 1000, 10000
-            )
-        return "light", "turn_on", data
+        return _light_service_call(profile, entity_id, values, color_full=color_full)
 
     if profile is DeviceProfile.COVER:
-        cover_capabilities = cover_capabilities or CoverCapabilities()
-        action = values.get("action")
-        if action == "stop":
-            if not cover_capabilities.stop:
-                raise ProtocolError("cover does not support stop")
-            return "cover", "stop_cover", {"entity_id": entity_id}
-        if action == "open":
-            if cover_capabilities.open:
-                return "cover", "open_cover", {"entity_id": entity_id}
-            if cover_capabilities.set_position:
-                return (
-                    "cover",
-                    "set_cover_position",
-                    {"entity_id": entity_id, "position": 100},
-                )
-            raise ProtocolError("cover does not support open")
-        if action == "close":
-            if cover_capabilities.close:
-                return "cover", "close_cover", {"entity_id": entity_id}
-            if cover_capabilities.set_position:
-                return (
-                    "cover",
-                    "set_cover_position",
-                    {"entity_id": entity_id, "position": 0},
-                )
-            raise ProtocolError("cover does not support close")
-        position = _integer(values, "position", 0, 100)
-        if not cover_capabilities.set_position:
-            if position == 0 and cover_capabilities.close:
-                return "cover", "close_cover", {"entity_id": entity_id}
-            if position == 100 and cover_capabilities.open:
-                return "cover", "open_cover", {"entity_id": entity_id}
-            raise ProtocolError("cover does not support intermediate positions")
-        return (
-            "cover",
-            "set_cover_position",
-            {
-                "entity_id": entity_id,
-                "position": position,
-            },
+        return _cover_service_call(
+            entity_id, values, cover_capabilities or CoverCapabilities()
         )
 
     if profile is DeviceProfile.THERMOSTAT:
@@ -183,9 +129,90 @@ def service_call_for_command(
     raise ProtocolError(f"unsupported profile: {profile}")
 
 
+def _light_service_call(
+    profile: DeviceProfile,
+    entity_id: str,
+    values: dict[str, Any],
+    *,
+    color_full: bool,
+) -> tuple[str, str, dict[str, Any]]:
+    """Translate a validated FRITZ light command."""
+    state = _binary_state(values)
+    # AHA reports the current relay state together with value commands. A value
+    # command received while off is still a request to apply that value.
+    has_hs = "hue" in values or "saturation" in values
+    has_value_command = "level" in values or "color_temperature" in values or has_hs
+    if not state and not has_value_command:
+        return "light", "turn_off", {"entity_id": entity_id}
+    data: dict[str, Any] = {"entity_id": entity_id}
+    if "level" in values:
+        data["brightness_pct"] = _integer(values, "level", 0, 100)
+    if "color_temperature" in values:
+        if profile is not DeviceProfile.COLOR_TEMPERATURE_LIGHT:
+            raise ProtocolError("color temperature is not enabled")
+        data["color_temp_kelvin"] = _integer(
+            values, "color_temperature", 1000, 10000
+        )
+    if has_hs:
+        if profile is not DeviceProfile.COLOR_TEMPERATURE_LIGHT or not color_full:
+            raise ProtocolError("full color is not enabled")
+        if "color_temperature" in values:
+            raise ProtocolError("multiple color modes in one command")
+        hue = _integer(values, "hue", 0, 359)
+        saturation = _integer(values, "saturation", 0, 255)
+        data["hs_color"] = (hue, saturation * 100 / 255)
+    return "light", "turn_on", data
+
+
+def _cover_service_call(
+    entity_id: str,
+    values: dict[str, Any],
+    capabilities: CoverCapabilities,
+) -> tuple[str, str, dict[str, Any]]:
+    """Translate a validated command for the mapped cover capabilities."""
+    action = values.get("action")
+    if action == "stop":
+        if not capabilities.stop:
+            raise ProtocolError("cover does not support stop")
+        return "cover", "stop_cover", {"entity_id": entity_id}
+    if action == "open":
+        if capabilities.open:
+            return "cover", "open_cover", {"entity_id": entity_id}
+        if capabilities.set_position:
+            return "cover", "set_cover_position", {
+                "entity_id": entity_id,
+                "position": 100,
+            }
+        raise ProtocolError("cover does not support open")
+    if action == "close":
+        if capabilities.close:
+            return "cover", "close_cover", {"entity_id": entity_id}
+        if capabilities.set_position:
+            return "cover", "set_cover_position", {
+                "entity_id": entity_id,
+                "position": 0,
+            }
+        raise ProtocolError("cover does not support close")
+    position = _integer(values, "position", 0, 100)
+    if capabilities.set_position:
+        return "cover", "set_cover_position", {
+            "entity_id": entity_id,
+            "position": position,
+        }
+    if position == 0 and capabilities.close:
+        return "cover", "close_cover", {"entity_id": entity_id}
+    if position == 100 and capabilities.open:
+        return "cover", "open_cover", {"entity_id": entity_id}
+    raise ProtocolError("cover does not support intermediate positions")
+
+
 def feedback_for_state(
-    profile: DeviceProfile, state: str, attributes: dict[str, Any]
-) -> dict[str, str]:
+    profile: DeviceProfile,
+    state: str,
+    attributes: dict[str, Any],
+    *,
+    color_full: bool = False,
+) -> dict[str, str | None]:
     """Translate one HA state into retained provider feedback properties."""
     unavailable = state in {"unknown", "unavailable"}
     if unavailable:
@@ -206,14 +233,39 @@ def feedback_for_state(
             and 0 <= brightness <= 255
         ):
             result["level"] = str(round(brightness * 100 / 255))
+        color_mode = attributes.get("color_mode")
         color_temperature = attributes.get("color_temp_kelvin")
+        if profile is DeviceProfile.COLOR_TEMPERATURE_LIGHT and not color_full:
+            # Also removes a retained HS value after rebinding/downgrading an
+            # existing full-colour mapping.
+            result["hs"] = None
         if (
             profile is DeviceProfile.COLOR_TEMPERATURE_LIGHT
+            and (not color_full or color_mode == "color_temp")
             and isinstance(color_temperature, (int, float))
             and not isinstance(color_temperature, bool)
             and 1000 <= color_temperature <= 10000
         ):
+            if color_full:
+                result["hs"] = None
             result["color_temperature"] = str(round(color_temperature))
+        if color_full and color_mode in {"hs", "xy", "rgb", "rgbw", "rgbww"}:
+            hs_color = attributes.get("hs_color")
+            if (
+                isinstance(hs_color, (list, tuple))
+                and len(hs_color) == 2
+                and all(
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    for value in hs_color
+                )
+                and 0 <= hs_color[0] <= 360
+                and 0 <= hs_color[1] <= 100
+            ):
+                hue = min(359, int(float(hs_color[0]) + 0.5))
+                saturation = int(float(hs_color[1]) * 255 / 100 + 0.5)
+                result["color_temperature"] = None
+                result["hs"] = f"{hue} {saturation}"
         return result
 
     if profile is DeviceProfile.COVER:

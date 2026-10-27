@@ -25,6 +25,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BRIDGE_ID,
+    CONF_COLOR_FULL,
     CONF_ENDPOINT_UID,
     CONF_FRITZ_NAME,
     CONF_PROFILE,
@@ -37,6 +38,7 @@ from .const import (
     PROTOCOL_VERSION,
     DeviceProfile,
 )
+from .models import full_color_supported
 from .protocol import (
     CoverCapabilities,
     ProtocolError,
@@ -266,6 +268,7 @@ class TentAHAcleBridge:
                 mapping[CONF_SOURCE_ENTITY_ID],
                 command,
                 cover_capabilities=cover_capabilities,
+                color_full=self._mapping_color_full(mapping),
             )
         except ProtocolError as err:
             _LOGGER.warning("Ignoring invalid command for %s: %s", uid, err)
@@ -516,6 +519,10 @@ class TentAHAcleBridge:
                 "enabled": True,
             },
         }
+        if mapping[CONF_PROFILE] == DeviceProfile.COLOR_TEMPERATURE_LIGHT.value:
+            payload["device"]["color_full"] = self._mapping_color_full(  # type: ignore[index]
+                mapping
+            )
         await mqtt.async_publish(
             self.hass,
             f"{self.topic_prefix}/management/request",
@@ -548,13 +555,27 @@ class TentAHAcleBridge:
         attributes: dict[str, Any],
     ) -> None:
         feedback = feedback_for_state(
-            DeviceProfile(mapping[CONF_PROFILE]), state, attributes
+            DeviceProfile(mapping[CONF_PROFILE]),
+            state,
+            attributes,
+            color_full=self._mapping_color_full(mapping),
         )
         for property_name, value in feedback.items():
             await mqtt.async_publish(
                 self.hass,
                 f"{self.topic_prefix}/device/{uid}/{property_name}/set",
-                value,
+                "" if value is None else value,
                 qos=1,
                 retain=True,
             )
+
+    def _mapping_color_full(self, mapping: dict[str, Any]) -> bool:
+        """Return stored capability or infer it for pre-upgrade subentries."""
+        if mapping.get(CONF_PROFILE) != DeviceProfile.COLOR_TEMPERATURE_LIGHT.value:
+            return False
+        if CONF_COLOR_FULL in mapping:
+            return bool(mapping[CONF_COLOR_FULL])
+        state = self.hass.states.get(mapping[CONF_SOURCE_ENTITY_ID])
+        return state is not None and full_color_supported(
+            state.attributes.get("supported_color_modes", [])
+        )

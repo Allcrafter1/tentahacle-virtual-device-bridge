@@ -29,6 +29,7 @@ from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
     CONF_BRIDGE_ID,
+    CONF_COLOR_FULL,
     CONF_ENDPOINT_UID,
     CONF_FRITZ_NAME,
     CONF_FRITZ_URL,
@@ -46,7 +47,9 @@ from .const import (
 from .models import (
     bridge_details_from_discovery,
     endpoint_uid_from_token,
+    full_color_supported,
     profile_for_domain,
+    profiles_for_entity,
     validate_bridge_id,
     validate_device_name,
     validate_fritz_url,
@@ -247,12 +250,13 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
         if source_state is None:
             return self.async_abort(reason="source_entity_missing")
         domain = self._source_entity_id.partition(".")[0]
-        default_profile = profile_for_domain(
-            domain,
-            color_temperature="color_temp"
-            in source_state.attributes.get("supported_color_modes", []),
+        supported_color_modes = source_state.attributes.get(
+            "supported_color_modes", []
         )
-        profiles = _profiles_for_entity(domain, default_profile)
+        default_profile = profile_for_domain(
+            domain, supported_color_modes=supported_color_modes
+        )
+        profiles = profiles_for_entity(domain, supported_color_modes)
         errors: dict[str, str] = {}
         if user_input is not None:
             if user_input[CONF_PROFILE] not in profiles:
@@ -265,6 +269,11 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
                     **user_input,
                     CONF_SOURCE_ENTITY_ID: self._source_entity_id,
                     CONF_ENDPOINT_UID: endpoint_uid,
+                    CONF_COLOR_FULL: (
+                        user_input[CONF_PROFILE]
+                        == DeviceProfile.COLOR_TEMPERATURE_LIGHT.value
+                        and full_color_supported(supported_color_modes)
+                    ),
                 }
                 data.update(
                     _detected_schedule_entities(
@@ -334,13 +343,9 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
                 entity_id, exclude_uid=subentry.data[CONF_ENDPOINT_UID]
             ):
                 errors[CONF_SOURCE_ENTITY_ID] = "already_mapped"
-            elif profile.value not in _profiles_for_entity(
+            elif profile.value not in profiles_for_entity(
                 entity_id.partition(".")[0],
-                profile_for_domain(
-                    entity_id.partition(".")[0],
-                    color_temperature="color_temp"
-                    in source_state.attributes.get("supported_color_modes", []),
-                ),
+                source_state.attributes.get("supported_color_modes", []),
             ):
                 errors[CONF_SOURCE_ENTITY_ID] = "incompatible_profile"
             elif not _valid_name(user_input[CONF_FRITZ_NAME]):
@@ -359,6 +364,12 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
                     },
                     **user_input,
                     CONF_ENDPOINT_UID: subentry.data[CONF_ENDPOINT_UID],
+                    CONF_COLOR_FULL: (
+                        profile is DeviceProfile.COLOR_TEMPERATURE_LIGHT
+                        and full_color_supported(
+                            source_state.attributes.get("supported_color_modes", [])
+                        )
+                    ),
                 }
                 data.update(
                     _detected_schedule_entities(
@@ -387,22 +398,6 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
             and subentry.data.get(CONF_ENDPOINT_UID) != exclude_uid
             for subentry in self._get_entry().subentries.values()
         )
-
-
-def _profiles_for_entity(domain: str, default_profile: DeviceProfile) -> list[str]:
-    """Return valid profiles, keeping optional light capability reduction."""
-    if domain in {"switch", "input_boolean"}:
-        return [DeviceProfile.SWITCH.value]
-    if domain == "light":
-        profiles = [DeviceProfile.DIMMABLE_LIGHT.value]
-        if default_profile is DeviceProfile.COLOR_TEMPERATURE_LIGHT:
-            profiles.append(DeviceProfile.COLOR_TEMPERATURE_LIGHT.value)
-        return profiles
-    if domain == "cover":
-        return [DeviceProfile.COVER.value]
-    if domain == "climate":
-        return [DeviceProfile.THERMOSTAT.value]
-    return []
 
 
 async def _async_common_translations(hass: HomeAssistant) -> dict[str, str]:

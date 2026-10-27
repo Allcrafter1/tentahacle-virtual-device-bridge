@@ -30,6 +30,7 @@ typedef struct {
     tvb_device_profile profile;
     tvb_hanfun_identity hanfun;
     uint8_t enabled;
+    uint8_t color_full;
     uint64_t revision;
 } tvb_device;
 /* Caller owns storage and serializes access. Read devices through const accessors.
@@ -61,6 +62,8 @@ tvb_registry_result tvb_registry_rename(tvb_device_registry *, uint64_t expected
     const char *uid, const char *name);
 tvb_registry_result tvb_registry_set_enabled(tvb_device_registry *, uint64_t expected_revision,
     const char *uid, int enabled);
+tvb_registry_result tvb_registry_set_color_full(tvb_device_registry *, uint64_t expected_revision,
+    const char *uid, int color_full);
 tvb_registry_result tvb_registry_remove(tvb_device_registry *, uint64_t expected_revision,
     const char *uid);
 #endif

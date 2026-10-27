@@ -133,6 +133,7 @@ static int advance_hanfun_timestamp(void) {
 static void select_device(const tvb_device *device) {
     selected_device = device;
     encoder.state = &device_values[device - registry.devices];
+    encoder.state->color_full = device->color_full;
 }
 
 static void unselect_device(void) {
@@ -327,16 +328,18 @@ static int dynamic_control(char *cmd, size_t capacity) {
         if (sscanf(cmd+offset, "%39s %n", profile, &name_offset) != 1 || !name_offset) return 0;
         tvb_device_profile p;
         for (p = 0; p < TVB_PROFILE_COUNT; ++p) if (!strcmp(profile, tvb_profile_name(p))) break;
+        if (p == TVB_PROFILE_COUNT) return 0;
+        const char *name = cmd+offset+name_offset;
         const tvb_device *existing = tvb_registry_find(&registry, uid);
-        if (existing) return (!restored_id || existing->remote_id == restored_id) && existing->profile == p && !strcmp(existing->name,
-            cmd+offset+name_offset);
+        if (existing) return (!restored_id || existing->remote_id == restored_id) &&
+            existing->profile == p && !strcmp(existing->name, name);
         uint16_t id;
         uint32_t watermark = registry.next_remote_id;
         if (restored_id) {
             if (tvb_registry_find_remote(&registry, (uint16_t) restored_id)) return 0;
             registry.next_remote_id = restored_id;
         }
-        tvb_registry_result added = tvb_registry_add(&registry, registry.revision, uid, cmd+offset+name_offset,
+        tvb_registry_result added = tvb_registry_add(&registry, registry.revision, uid, name,
             p, &id);
         if (added != TVB_REGISTRY_OK) {
             registry.next_remote_id = watermark;
@@ -353,13 +356,34 @@ static int dynamic_control(char *cmd, size_t capacity) {
         }
         return 1;
     }
-    int management = !strcmp(operation, "RENAME") || !strcmp(operation, "ENABLE") ||
+    int management = !strcmp(operation, "RENAME") || !strcmp(operation, "COLOR_CAPABILITY") ||
+    !strcmp(operation, "ENABLE") ||
     !strcmp(operation, "DISABLE") || !strcmp(operation, "REMOVE") ||
     !strcmp(operation, "UNIT") || !strcmp(operation, "ANNOUNCE");
     if (!tvb_registry_valid_uid(uid)) return management ? 0:-1;
     const tvb_device *d = tvb_registry_find(&registry, uid);
     /* REMOVE is deliberately idempotent so an interrupted prune can be retried. */
     if (!d) return !strcmp(operation, "REMOVE");
+    if (!strcmp(operation, "COLOR_CAPABILITY")) {
+        if (d->profile != TVB_PROFILE_COLOR_TEMPERATURE_LIGHT) return 0;
+        int full;
+        if (!strcmp(cmd+offset, "temperature")) full = 0;
+        else if (!strcmp(cmd+offset, "full")) full = 1;
+        else return 0;
+        int changed = d->color_full != full;
+        if (tvb_registry_set_color_full(&registry, registry.revision, uid, full) != TVB_REGISTRY_OK) return 0;
+        d = tvb_registry_find(&registry, uid);
+        struct provider_state *state = &device_values[d-registry.devices];
+        state->color_full = d->color_full;
+        if (!full) { state->color_mode = 2; state->color_is_unmapped = 0; }
+        if (changed && d->enabled && encoder.fd >= 0) {
+            select_device(d);
+            (void) emit_color_capabilities(&encoder);
+            (void) emit_color_value(&encoder);
+            unselect_device();
+        }
+        return 1;
+    }
     if (!strcmp(operation, "RENAME")) {
         int changed = strcmp(d->name, cmd+offset) != 0;
         if (tvb_registry_rename(&registry, registry.revision, uid, cmd+offset) != TVB_REGISTRY_OK) return 0;
@@ -416,6 +440,7 @@ static int dynamic_control(char *cmd, size_t capacity) {
     int allowed = (!strcmp(operation, "SET") && (light || d->profile == TVB_PROFILE_SWITCH)) ||
         (!strcmp(operation, "LEVEL") && light) ||
         (!strcmp(operation, "COLOR_TEMP") && d->profile == TVB_PROFILE_COLOR_TEMPERATURE_LIGHT) ||
+        (!strcmp(operation, "HS") && d->profile == TVB_PROFILE_COLOR_TEMPERATURE_LIGHT && d->color_full) ||
         (!strcmp(operation, "POSITION") && d->profile == TVB_PROFILE_COVER) ||
         (d->profile == TVB_PROFILE_THERMOSTAT && (!strcmp(operation, "TARGET") || !strcmp(operation,
         "MODE") ||
@@ -724,12 +749,12 @@ static ssize_t send_frame(int fd, const void*buf, size_t n, int flags) {
             }
             if (remote_id == 453 && n == 36+inner_length && inner_function == 108 && inner_length >= 4) {
                 unsigned mode = read_be32(p+36);
-                if (mode == 2 && inner_length == 10) {
+                if (mode == 2 && inner_length == 10 && read_be16(p+40) >= 1000 && read_be16(p+40) <= 10000) {
                     encoder.state->color_mode = 2;
                     encoder.state->color_temperature = read_be16(p+40);
                     encoder.state->color_is_unmapped = 0;
                 }
-                else if (!dynamic && mode == 0 && inner_length == 16) {
+                else if ((!dynamic || dynamic->color_full) && mode == 0 && inner_length == 16 && read_be16(p+40) < 360) {
                     encoder.state->color_mode = 0;
                     encoder.state->color_hue = read_be16(p+40);
                     encoder.state->color_saturation = p[42];
@@ -994,7 +1019,7 @@ static void handle_control_client(int c, int watchers[4]) {
             else if (!strncmp(cmd, "COLOR_TEMP VIRT000000000004 ", 28)) {
                 char *end = 0;
                 unsigned long value = strtoul(cmd+28, &end, 10);
-                if (end == cmd+28 || *end || value > 65535) ok = 0;
+                if (end == cmd+28 || *end || value < 1000 || value > 10000) ok = 0;
                 else {
                     encoder.state->color_mode = 2;
                     encoder.state->color_temperature = (unsigned) value;

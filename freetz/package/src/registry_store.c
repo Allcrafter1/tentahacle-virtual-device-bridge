@@ -133,6 +133,11 @@ char *tvb_registry_serialize(const tvb_device_registry *registry) {
                 goto done;
             }
         }
+        if (device->profile == TVB_PROFILE_COLOR_TEMPERATURE_LIGHT &&
+            !cJSON_AddBoolToObject(item, "color_full", device->color_full != 0)) {
+            cJSON_Delete(item);
+            goto done;
+        }
         cJSON_AddItemToArray(items, item);
     }
     serialized = cJSON_PrintUnformatted(root);
@@ -195,7 +200,7 @@ int tvb_registry_deserialize(const char *serialized,
     }
     for (index = 0; index < item_count; ++index) {
         cJSON *item = cJSON_GetArrayItem(devices, index);
-        cJSON *uid, *name, *profile, *enabled, *identity;
+        cJSON *uid, *name, *profile, *enabled, *identity, *color_full;
         tvb_device *device = &parsed.devices[parsed.count];
         size_t previous;
         uint64_t remote_id, revision, discriminator, unit_id;
@@ -207,6 +212,7 @@ int tvb_registry_deserialize(const char *serialized,
         name = cJSON_GetObjectItemCaseSensitive(item, "name");
         profile = cJSON_GetObjectItemCaseSensitive(item, "profile");
         enabled = cJSON_GetObjectItemCaseSensitive(item, "enabled");
+        color_full = cJSON_GetObjectItemCaseSensitive(item, "color_full");
         if (!cJSON_IsString(uid) || !tvb_registry_valid_uid(uid->valuestring) ||
             !cJSON_IsString(name) || !tvb_registry_valid_name(name->valuestring) ||
             !cJSON_IsString(profile) || !parse_profile(profile->valuestring, &device->profile) ||
@@ -216,6 +222,14 @@ int tvb_registry_deserialize(const char *serialized,
             !json_u64(cJSON_GetObjectItemCaseSensitive(item, "revision"), parsed.revision, &revision) ||
             revision == 0) {
             set_error(error, error_size, "invalid device fields");
+            goto fail;
+        }
+        if (color_full && !cJSON_IsBool(color_full)) {
+            set_error(error, error_size, "invalid color capability");
+            goto fail;
+        }
+        if (color_full && device->profile != TVB_PROFILE_COLOR_TEMPERATURE_LIGHT) {
+            set_error(error, error_size, "unexpected full-color capability");
             goto fail;
         }
         for (previous = 0; previous < parsed.count; ++previous) {
@@ -233,6 +247,7 @@ int tvb_registry_deserialize(const char *serialized,
         snprintf(device->name, sizeof(device->name), "%s", name->valuestring);
         device->remote_id = (uint16_t)remote_id;
         device->enabled = (uint8_t)cJSON_IsTrue(enabled);
+        device->color_full = (uint8_t)cJSON_IsTrue(color_full);
         device->revision = revision;
         identity = cJSON_GetObjectItemCaseSensitive(item, "hanfun");
         if (is_hanfun_profile(device->profile)) {

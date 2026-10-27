@@ -39,6 +39,8 @@ int main(void) {
     CHECK(tvb_registry_add(&original, 0, "TVB0123456789abcdef", "Morgenlicht",
                            TVB_PROFILE_COLOR_TEMPERATURE_LIGHT, &remote_id) == TVB_REGISTRY_OK);
     CHECK(remote_id == TVB_FIRST_REMOTE_ID);
+    CHECK(tvb_registry_set_color_full(&original, original.revision,
+                                      "TVB0123456789ABCDEF", 1) == TVB_REGISTRY_OK);
     CHECK(tvb_registry_add(&original, original.revision, "TVB1111111111111111", "Heizung Büro",
                            TVB_PROFILE_THERMOSTAT, NULL) == TVB_REGISTRY_OK);
     CHECK(tvb_registry_set_enabled(&original, original.revision,
@@ -56,6 +58,7 @@ int main(void) {
     CHECK(device != NULL);
     CHECK(device && !strcmp(device->name, "Morgenlicht"));
     CHECK(device && device->hanfun.unit_id == 1);
+    CHECK(device && device->color_full);
     device = tvb_registry_find(&loaded, "TVB1111111111111111");
     CHECK(device && !device->enabled);
 
@@ -91,6 +94,11 @@ int main(void) {
     unchanged = loaded;
     CHECK(!tvb_registry_deserialize(
         "{\"schema_version\":2,\"revision\":0,\"next_remote_id\":456,\"devices\":[]}",
+        &loaded, error, sizeof(error)));
+    CHECK(!tvb_registry_deserialize(
+        "{\"schema_version\":1,\"revision\":1,\"next_remote_id\":457,\"devices\":["
+        "{\"uid\":\"TVB0123456789ABCDEF\",\"name\":\"x\",\"remote_id\":456,"
+        "\"profile\":\"switch\",\"enabled\":true,\"color_full\":false,\"revision\":1}]}",
         &loaded, error, sizeof(error)));
     CHECK(!memcmp(&loaded, &unchanged, sizeof(loaded)));
     CHECK(!tvb_registry_deserialize(

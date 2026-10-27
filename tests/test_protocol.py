@@ -87,7 +87,100 @@ def test_color_temperature_feedback_uses_confirmed_value() -> None:
         DeviceProfile.COLOR_TEMPERATURE_LIGHT,
         "on",
         {"brightness": 128, "color_temp_kelvin": 3003},
-    ) == {"state": "ON", "level": "50", "color_temperature": "3003"}
+    ) == {
+        "state": "ON",
+        "level": "50",
+        "hs": None,
+        "color_temperature": "3003",
+    }
+
+
+def test_full_color_command_maps_fritz_hs_to_home_assistant_scale() -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","state":0,'
+        '"hue":120,"saturation":128,"sequence":7}'
+    )
+    assert service_call_for_command(
+        DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+        "light.desk",
+        parsed,
+        color_full=True,
+    ) == (
+        "light",
+        "turn_on",
+        {"entity_id": "light.desk", "hs_color": (120, 128 * 100 / 255)},
+    )
+
+
+def test_full_color_feedback_uses_active_mode_and_clears_stale_temperature() -> None:
+    assert feedback_for_state(
+        DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+        "on",
+        {
+            "brightness": 255,
+            "color_mode": "rgb",
+            "color_temp_kelvin": 3000,
+            "hs_color": (359.8, 50),
+        },
+        color_full=True,
+    ) == {
+        "state": "ON",
+        "level": "100",
+        "color_temperature": None,
+        "hs": "359 128",
+    }
+
+
+def test_full_color_temperature_feedback_clears_stale_hs() -> None:
+    assert feedback_for_state(
+        DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+        "on",
+        {
+            "color_mode": "color_temp",
+            "color_temp_kelvin": 4200,
+            "hs_color": (20, 40),
+        },
+        color_full=True,
+    ) == {
+        "state": "ON",
+        "hs": None,
+        "color_temperature": "4200",
+    }
+
+
+def test_ct_only_profile_rejects_hs_command() -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","state":1,'
+        '"hue":120,"saturation":128,"sequence":7}'
+    )
+    with pytest.raises(ProtocolError, match="full color"):
+        service_call_for_command(
+            DeviceProfile.COLOR_TEMPERATURE_LIGHT, "light.desk", parsed
+        )
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        '"hue":360,"saturation":255',
+        '"hue":120,"saturation":256',
+        '"hue":120',
+        '"saturation":128',
+        '"hue":120,"saturation":128,"color_temperature":3000',
+    ],
+)
+def test_full_color_command_rejects_invalid_or_ambiguous_values(values: str) -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","state":1,'
+        f'{values},"sequence":7}}'
+    )
+    with pytest.raises(ProtocolError):
+        service_call_for_command(
+            DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+            "light.desk",
+            parsed,
+            color_full=True,
+        )
 
 
 @pytest.mark.parametrize(

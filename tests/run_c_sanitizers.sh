@@ -5,8 +5,8 @@ set -eu
 cd "$(dirname "$0")/.."
 audit_build=$(mktemp -d /tmp/tvb-sanitizers-XXXXXX)
 trap 'rm -rf "$audit_build"' EXIT HUP INT TERM
-export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1
-export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:halt_on_error=1}"
+export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
 compile() {
     "${CC:-cc}" -O1 -g -std=gnu11 -Wall -Wextra -Werror \
         -fsanitize=address,undefined,float-cast-overflow -fno-omit-frame-pointer \
@@ -31,10 +31,14 @@ compile -ffunction-sections -fdata-sections tests/mqtt_bridge_test.c "$src/devic
     -lcjson -pthread -lm -Wl,--gc-sections -o "$audit_build/mqtt"
 "$audit_build/mqtt"
 compile tests/provider_failure_regression_test.c "$src/provider_profiles.c" "$src/provider_events.c"     "$src/provider_transport.c" "$src/provider_catalog_sync.c" "$src/device_registry.c"     -ldl -pthread -o "$audit_build/failure-regression"
+compile tests/provider_color_test.c "$src/provider_profiles.c" "$src/provider_events.c" \
+    "$src/provider_transport.c" "$src/provider_catalog_sync.c" "$src/device_registry.c" \
+    -ldl -pthread -o "$audit_build/provider-color"
 compile tests/provider_dispatch_fuzz_test.c "$src/provider_profiles.c" "$src/provider_events.c" \
     "$src/provider_transport.c" "$src/provider_catalog_sync.c" "$src/device_registry.c" \
     -ldl -pthread -o "$audit_build/dispatch-fuzz"
 "$audit_build/dispatch-fuzz"
+"$audit_build/provider-color"
 "$audit_build/failure-regression"
 compile -fPIC -shared "$src/virtual_provider.c" "$src/provider_profiles.c" "$src/provider_events.c" \
     "$src/provider_transport.c" "$src/provider_catalog_sync.c" "$src/device_registry.c" \

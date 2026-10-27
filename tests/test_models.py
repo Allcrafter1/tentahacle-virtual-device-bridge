@@ -8,7 +8,9 @@ from custom_components.tentahacle.models import (
     VirtualDevice,
     bridge_details_from_discovery,
     endpoint_uid_from_token,
+    full_color_supported,
     profile_for_domain,
+    profiles_for_entity,
     validate_bridge_id,
     validate_fritz_url,
 )
@@ -52,20 +54,51 @@ def test_bridge_discovery_rejects_invalid(topic: str, payload: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("domain", "color_temperature", "expected"),
+    ("domain", "supported_color_modes", "expected"),
     [
-        ("switch", False, DeviceProfile.SWITCH),
-        ("input_boolean", False, DeviceProfile.SWITCH),
-        ("light", False, DeviceProfile.DIMMABLE_LIGHT),
-        ("light", True, DeviceProfile.COLOR_TEMPERATURE_LIGHT),
-        ("cover", False, DeviceProfile.COVER),
-        ("climate", False, DeviceProfile.THERMOSTAT),
+        ("switch", [], DeviceProfile.SWITCH),
+        ("input_boolean", [], DeviceProfile.SWITCH),
+        ("light", ["onoff"], DeviceProfile.SWITCH),
+        ("light", ["brightness"], DeviceProfile.DIMMABLE_LIGHT),
+        ("light", ["color_temp"], DeviceProfile.COLOR_TEMPERATURE_LIGHT),
+        ("light", ["rgb"], DeviceProfile.COLOR_TEMPERATURE_LIGHT),
+        ("cover", [], DeviceProfile.COVER),
+        ("climate", [], DeviceProfile.THERMOSTAT),
     ],
 )
 def test_profile_for_domain(
-    domain: str, color_temperature: bool, expected: DeviceProfile
+    domain: str, supported_color_modes: list[str], expected: DeviceProfile
 ) -> None:
-    assert profile_for_domain(domain, color_temperature=color_temperature) is expected
+    assert (
+        profile_for_domain(domain, supported_color_modes=supported_color_modes)
+        is expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("modes", "expected"),
+    [(["color_temp"], False), (["color_temp", "hs"], True), (["rgb"], True)],
+)
+def test_full_color_capability_detection(modes: list[str], expected: bool) -> None:
+    assert full_color_supported(modes) is expected
+
+
+@pytest.mark.parametrize(
+    ("modes", "expected"),
+    [
+        (["onoff"], ["switch"]),
+        (["brightness"], ["switch", "dimmable_light"]),
+        (
+            ["color_temp"],
+            ["switch", "dimmable_light", "color_temperature_light"],
+        ),
+        (["rgb"], ["switch", "dimmable_light", "color_temperature_light"]),
+    ],
+)
+def test_light_profiles_follow_home_assistant_color_modes(
+    modes: list[str], expected: list[str]
+) -> None:
+    assert profiles_for_entity("light", modes) == expected
 
 
 def test_management_payload_has_no_home_assistant_entity_id_on_wire() -> None:
@@ -79,6 +112,28 @@ def test_management_payload_has_no_home_assistant_entity_id_on_wire() -> None:
     assert payload["schema_version"] == 1
     assert payload["device"]["uid"] == "TVB0123456789ABCDEF"  # type: ignore[index]
     assert "source_entity_id" not in payload["device"]  # type: ignore[operator]
+
+
+def test_full_color_capability_is_part_of_color_device_management() -> None:
+    device = VirtualDevice(
+        endpoint_uid="TVB0123456789ABCDEF",
+        profile=DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+        name="Colour light",
+        source_entity_id="light.colour",
+        color_full=True,
+    )
+    assert device.management_payload("request-1")["device"]["color_full"] is True  # type: ignore[index]
+
+
+def test_full_color_capability_is_rejected_for_other_profiles() -> None:
+    with pytest.raises(ValueError, match="full color"):
+        VirtualDevice(
+            endpoint_uid="TVB0123456789ABCDEF",
+            profile=DeviceProfile.SWITCH,
+            name="Not a colour light",
+            source_entity_id="switch.test",
+            color_full=True,
+        )
 
 
 def test_validation_rejects_topic_injection_and_long_names() -> None:

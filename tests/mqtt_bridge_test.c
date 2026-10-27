@@ -70,7 +70,7 @@ static pid_t fake_provider(const char *path){
 }
 static void profile_matrix_and_cache(void){
     static const char *kinds[]={"state","level","color_temperature","hs","position","target_temperature","hvac_mode","timer","schedule"};
-    static const char *values[]={"ON","55","2700","120,100","60","20.5","heat","boost 2000","active 40 36 50 60"};
+    static const char *values[]={"ON","55","2700","120 100","60","20.5","heat","boost 2000","active 40 36 50 60"};
     static const unsigned allowed[]={1u,3u,7u,1u<<4,(1u<<5)|(1u<<6)|(1u<<7)|(1u<<8)};
     tvb_registry_init(&registry);provider_ready=0;
     for(unsigned profile=0;profile<TVB_PROFILE_COUNT;profile++){
@@ -79,10 +79,26 @@ static void profile_matrix_and_cache(void){
         for(unsigned kind=0;kind<9;kind++){
             memset(feedback_cache,0,sizeof(feedback_cache));
             feedback(uid,kinds[kind],values[kind]);
-            int cached=0;for(unsigned field=0;field<8;field++)cached|=*feedback_cache[profile][field]!=0;
+            int cached=0;for(unsigned field=0;field<FEEDBACK_COUNT;field++)cached|=*feedback_cache[profile][field]!=0;
             assert(cached==((allowed[profile]&(1u<<kind))!=0));
         }
     }
+    const char *color_uid=registry.devices[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT].uid;
+    assert(tvb_registry_set_color_full(&registry,registry.revision,color_uid,1)==TVB_REGISTRY_OK);
+    feedback(color_uid,"hs","120 100");
+    assert(strstr(feedback_cache[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT][FEEDBACK_HS],"120 100"));
+    feedback(color_uid,"color_temperature","3000");
+    assert(!*feedback_cache[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT][FEEDBACK_HS]);
+    assert(strstr(feedback_cache[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT][FEEDBACK_COLOR_TEMP],"3000"));
+    feedback(color_uid,"hs","240 200");
+    assert(!*feedback_cache[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT][FEEDBACK_COLOR_TEMP]);
+    feedback(color_uid,"hs","");
+    assert(!*feedback_cache[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT][FEEDBACK_HS]);
+    feedback(color_uid,"hs","120 100");
+    tvb_device_registry capability_before=registry;
+    assert(tvb_registry_set_color_full(&registry,registry.revision,color_uid,0)==TVB_REGISTRY_OK);
+    remap_feedback_cache(&capability_before);
+    assert(!*feedback_cache[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT][FEEDBACK_HS]);
     tvb_device_registry before=registry;
     for(unsigned i=0;i<TVB_PROFILE_COUNT;i++)snprintf(feedback_cache[i][0],128,"row%u",i);
     assert(tvb_registry_remove(&registry,registry.revision,before.devices[0].uid)==TVB_REGISTRY_OK);
@@ -113,6 +129,11 @@ int main(void){
     assert(!candidate(add,&r,&mutate,&announce));assert(mutate&&r.count==1&&r.devices[0].remote_id==456);
     uint64_t revision=r.revision;
     assert(!candidate(add,&r,&mutate,&announce));assert(r.revision==revision);
+    const char *full="{\"schema_version\":1,\"request_id\":\"test-full\",\"operation\":\"upsert_device\",\"device\":{\"uid\":\"TVB0123456789ABCDEF\",\"name\":\"Licht Küche\",\"profile\":\"color_temperature_light\",\"enabled\":true,\"color_full\":true}}";
+    assert(!candidate(full,&r,&mutate,&announce));assert(mutate&&r.devices[0].color_full);
+    revision=r.revision;
+    assert(!candidate(add,&r,&mutate,&announce));assert(r.revision==revision&&r.devices[0].color_full);
+    assert(candidate("{\"schema_version\":1,\"operation\":\"upsert_device\",\"device\":{\"uid\":\"TVB0123456789ABCDE0\",\"name\":\"Bad\",\"profile\":\"switch\",\"color_full\":false}}",&r,&mutate,&announce));
     assert(candidate("{\"schema_version\":2,\"operation\":\"list_devices\"}",&r,&mutate,&announce));
     assert(candidate("{\"schema_version\":1,\"operation\":\"delete_device\"}",&r,&mutate,&announce));
     assert(candidate("{\"schema_version\":1,\"schema_version\":1,\"operation\":\"list_devices\"}",&r,&mutate,&announce));
@@ -139,18 +160,18 @@ int main(void){
     cJSON_InitHooks(NULL);
     feedback(r.devices[0].uid,"level","55");assert(strstr(feedback_cache[0][1],"55"));
     feedback(r.devices[0].uid,"level","101");assert(strstr(feedback_cache[0][1],"55"));
-    feedback(r.devices[0].uid,"position","40");assert(!*feedback_cache[0][3]);
-    feedback(r.devices[0].uid,"target_temperature","nan");assert(!*feedback_cache[0][4]);
+    feedback(r.devices[0].uid,"position","40");assert(!*feedback_cache[0][FEEDBACK_POSITION]);
+    feedback(r.devices[0].uid,"target_temperature","nan");assert(!*feedback_cache[0][FEEDBACK_TARGET]);
     feedback(r.devices[0].uid,"color_temperature","2700");assert(strstr(feedback_cache[0][2],"2700"));
     assert(tvb_registry_add(&registry,registry.revision,"TVB1123456789ABCDEF","Thermo",TVB_PROFILE_THERMOSTAT,NULL)==TVB_REGISTRY_OK);
-    feedback(registry.devices[1].uid,"target_temperature","nan");assert(!*feedback_cache[1][4]);
-    feedback(registry.devices[1].uid,"target_temperature","inf");assert(!*feedback_cache[1][4]);
-    feedback(registry.devices[1].uid,"target_temperature","20.5");assert(strstr(feedback_cache[1][4],"20.5"));
-    feedback(registry.devices[1].uid,"target_temperature","20.2");assert(strstr(feedback_cache[1][4],"20.5"));
-    feedback(registry.devices[1].uid,"timer","boost 4294967296");assert(!*feedback_cache[1][6]);
-    feedback(registry.devices[1].uid,"timer","boost 9999999999999999999999999");assert(!*feedback_cache[1][6]);
-    feedback(registry.devices[1].uid,"schedule","active 4294967336 36 50 60");assert(!*feedback_cache[1][7]);
-    feedback(registry.devices[1].uid,"schedule","active 40 36 50 60");assert(strstr(feedback_cache[1][7],"active"));
+    feedback(registry.devices[1].uid,"target_temperature","nan");assert(!*feedback_cache[1][FEEDBACK_TARGET]);
+    feedback(registry.devices[1].uid,"target_temperature","inf");assert(!*feedback_cache[1][FEEDBACK_TARGET]);
+    feedback(registry.devices[1].uid,"target_temperature","20.5");assert(strstr(feedback_cache[1][FEEDBACK_TARGET],"20.5"));
+    feedback(registry.devices[1].uid,"target_temperature","20.2");assert(strstr(feedback_cache[1][FEEDBACK_TARGET],"20.5"));
+    feedback(registry.devices[1].uid,"timer","boost 4294967296");assert(!*feedback_cache[1][FEEDBACK_TIMER]);
+    feedback(registry.devices[1].uid,"timer","boost 9999999999999999999999999");assert(!*feedback_cache[1][FEEDBACK_TIMER]);
+    feedback(registry.devices[1].uid,"schedule","active 4294967336 36 50 60");assert(!*feedback_cache[1][FEEDBACK_SCHEDULE]);
+    feedback(registry.devices[1].uid,"schedule","active 40 36 50 60");assert(strstr(feedback_cache[1][FEEDBACK_SCHEDULE],"active"));
     char directory[]="/tmp/tvb-mqtt-test-XXXXXX";assert(mkdtemp(directory));
     /* Native AHA helpers must not inherit the bridge's Freetz library path.
      * Exercise the actual fork/exec boundary for both native operations. */
@@ -237,7 +258,7 @@ int main(void){
     feedback(registry.devices[0].uid,"hvac_mode","off");
     unit_due=time(NULL)-1;assert(finish_units_locked());
     status=provider_query("GET");assert(cJSON_GetObjectItem(status,"target")->valueint==253);cJSON_Delete(status);
-    feedback_cache[0][5][0]=0;unit_due=time(NULL)-1;assert(finish_units_locked());
+    feedback_cache[0][FEEDBACK_MODE][0]=0;unit_due=time(NULL)-1;assert(finish_units_locked());
     status=provider_query("GET");assert(cJSON_GetObjectItem(status,"target")->valueint==43);cJSON_Delete(status);
     registry=before_replay;memset(feedback_cache,0,sizeof(feedback_cache));
     assert(provider_request("TEST WRONG_ID"));assert(!reconcile_provider_locked()&&!provider_ready);

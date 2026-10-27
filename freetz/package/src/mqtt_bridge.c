@@ -59,14 +59,24 @@ static time_t screen_resync_due;
 static unsigned char screen_resync_attempts[TVB_REGISTRY_CAPACITY];
 static size_t screen_resync_cursor;
 static int provider_request(const char *request);
-static char feedback_cache[TVB_REGISTRY_CAPACITY][8][128];
-static const char *const feedback_operations[]={"SET","LEVEL","COLOR_TEMP","POSITION","TARGET","MODE","TIMER","SCHEDULE"};
+enum feedback_kind {
+    FEEDBACK_SET, FEEDBACK_LEVEL, FEEDBACK_COLOR_TEMP, FEEDBACK_HS,
+    FEEDBACK_POSITION, FEEDBACK_TARGET, FEEDBACK_MODE, FEEDBACK_TIMER,
+    FEEDBACK_SCHEDULE, FEEDBACK_COUNT
+};
+static char feedback_cache[TVB_REGISTRY_CAPACITY][FEEDBACK_COUNT][128];
+static const char *const feedback_operations[]={
+    "SET","LEVEL","COLOR_TEMP","HS","POSITION","TARGET","MODE","TIMER","SCHEDULE"
+};
 static int feedback_request(const char *request){
     char operation[24],uid[20];
     if(sscanf(request,"%23s %19s",operation,uid)!=2||strlen(request)>=128)return 0;
     const tvb_device *device=tvb_registry_find(&registry,uid);if(!device)return 0;
-    for(size_t i=0;i<8;i++)if(!strcmp(operation,feedback_operations[i])){
-        strcpy(feedback_cache[device-registry.devices][i],request);
+    for(size_t i=0;i<FEEDBACK_COUNT;i++)if(!strcmp(operation,feedback_operations[i])){
+        size_t row=(size_t)(device-registry.devices);
+        if(i==FEEDBACK_COLOR_TEMP)feedback_cache[row][FEEDBACK_HS][0]=0;
+        else if(i==FEEDBACK_HS)feedback_cache[row][FEEDBACK_COLOR_TEMP][0]=0;
+        strcpy(feedback_cache[row][i],request);
         if(!provider_ready)return 1;
         if(provider_request(request))return 1;
         provider_ready=0;unit_due=0;return 0;
@@ -217,7 +227,8 @@ static int is_hanfun(tvb_device_profile profile){
 }
 static int provider_device(const tvb_device *device){
     char command[256];
-    snprintf(command,sizeof(command),"RESTORE %s %u %s %s",device->uid,device->remote_id,tvb_profile_name(device->profile),device->name);
+    snprintf(command,sizeof(command),"RESTORE %s %u %s %s",device->uid,
+        device->remote_id,tvb_profile_name(device->profile),device->name);
     cJSON *reply=provider_query(command);
     cJSON *id=cJSON_GetObjectItemCaseSensitive(reply,"remote_id");
     const cJSON *profile=cJSON_GetObjectItemCaseSensitive(reply,"profile");
@@ -229,6 +240,11 @@ static int provider_device(const tvb_device *device){
     if(!identity_ok)return 0;
     if(!ok){
         snprintf(command,sizeof(command),"RENAME %s %s",device->uid,device->name);
+        if(!provider_request(command))return 0;
+    }
+    if(device->profile==TVB_PROFILE_COLOR_TEMPERATURE_LIGHT){
+        snprintf(command,sizeof(command),"COLOR_CAPABILITY %s %s",device->uid,
+            device->color_full?"full":"temperature");
         if(!provider_request(command))return 0;
     }
     snprintf(command,sizeof(command),"%s %s",device->enabled?"ENABLE":"DISABLE",device->uid);
@@ -265,13 +281,16 @@ static int finish_units_locked(void){
     /* SCHEDULE initializes the provider's target. Restore the authoritative
      * target/mode afterwards, otherwise an active schedule turns an OFF
      * thermostat back to HEAT on each provider reconnect. */
-    static const unsigned replay_order[]={7,0,1,2,3,4,5,6};
+    static const unsigned replay_order[]={
+        FEEDBACK_SCHEDULE,FEEDBACK_SET,FEEDBACK_LEVEL,FEEDBACK_COLOR_TEMP,
+        FEEDBACK_HS,FEEDBACK_POSITION,FEEDBACK_TARGET,FEEDBACK_MODE,FEEDBACK_TIMER
+    };
     for(size_t i=0;i<registry.count;i++)if(registry.devices[i].enabled)
-        for(size_t order=0;order<8;order++){
+        for(size_t order=0;order<FEEDBACK_COUNT;order++){
             size_t kind=replay_order[order];
             if(!*feedback_cache[i][kind])continue;
             char *command=feedback_cache[i][kind];
-            if(kind==6){
+            if(kind==FEEDBACK_TIMER){
                 unsigned long end;char uid[20],mode[8];
                 if(sscanf(command,"TIMER %19s %7s %lu",uid,mode,&end)==3&&end<=(unsigned long)time(NULL))
                     snprintf(command,128,"TIMER %s cancel",registry.devices[i].uid);
@@ -354,7 +373,7 @@ static int parse_profile(const char *name,tvb_device_profile *profile){
 /* Pure candidate builder, also exercised by the host test. */
 static const char *management_candidate(const cJSON *root,tvb_device_registry *candidate,int *mutate,int *reannounce){
     static const char *const keys[]={"schema_version","request_id","operation","expected_revision","device","uid","name","enabled","enabled_uids","keep_uids",NULL};
-    static const char *const device_keys[]={"uid","profile","name","enabled",NULL};
+    static const char *const device_keys[]={"uid","profile","name","enabled","color_full",NULL};
     uint64_t version,expected;*mutate=0;*reannounce=0;
     if(!keys_valid(root,keys)||!json_integer(cJSON_GetObjectItemCaseSensitive(root,"schema_version"),&version)||version!=1)return "invalid_schema";
     const char *operation=json_string(root,"operation");if(!operation)return "invalid_operation";
@@ -369,12 +388,15 @@ static const char *management_candidate(const cJSON *root,tvb_device_registry *c
         const char *uid=json_string(device,"uid"),*name=json_string(device,"name");
         tvb_device_profile profile;
         const cJSON *enabled=cJSON_GetObjectItemCaseSensitive(device,"enabled");
+        const cJSON *color_full=cJSON_GetObjectItemCaseSensitive(device,"color_full");
         if(!tvb_registry_valid_uid(uid)||!tvb_registry_valid_name(name)||name[0]==' '||!parse_profile(json_string(device,"profile"),&profile)||
-           (enabled&&!cJSON_IsBool(enabled)))return "invalid_device";
+           (enabled&&!cJSON_IsBool(enabled))||(color_full&&!cJSON_IsBool(color_full))||
+           (color_full&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT))return "invalid_device";
         const tvb_device *existing=tvb_registry_find(candidate,uid);
         if(existing&&existing->profile!=profile)return "immutable_profile";
         if(existing)result=tvb_registry_rename(candidate,candidate->revision,uid,name);
         else result=tvb_registry_add(candidate,candidate->revision,uid,name,profile,NULL);
+        if(result==TVB_REGISTRY_OK&&color_full)result=tvb_registry_set_color_full(candidate,candidate->revision,uid,cJSON_IsTrue(color_full));
         if(result==TVB_REGISTRY_OK&&enabled)result=tvb_registry_set_enabled(candidate,candidate->revision,uid,cJSON_IsTrue(enabled));
     }else if(!strcmp(operation,"rename_device")){
         const char *name=json_string(root,"name");
@@ -436,6 +458,8 @@ static void remap_feedback_cache(const tvb_device_registry *old_registry){
         }else memset(feedback_cache[i],0,sizeof(feedback_cache[i]));
     }
     for(size_t i=registry.count;i<TVB_REGISTRY_CAPACITY;i++)memset(feedback_cache[i],0,sizeof(feedback_cache[i]));
+    for(size_t i=0;i<registry.count;i++)if(!registry.devices[i].color_full)
+        feedback_cache[i][FEEDBACK_HS][0]=0;
 }
 static void management_locked(const struct mosquitto_message *message){
     if(message->retain||message->payloadlen<=0||message->payloadlen>8192||memchr(message->payload,0,(size_t)message->payloadlen))return;
@@ -528,9 +552,14 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
     const tvb_device *device=tvb_registry_find(&registry,endpoint_id);
     if(!device||!device->enabled)return;
     tvb_device_profile profile=device->profile;
+    if(message->payloadlen==0&&(kind==2||kind==3)){
+        feedback_cache[device-registry.devices][kind][0]=0;
+        return;
+    }
     if((kind==0&&profile!=TVB_PROFILE_SWITCH&&profile!=TVB_PROFILE_DIMMABLE_LIGHT&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)||
        (kind==1&&profile!=TVB_PROFILE_DIMMABLE_LIGHT&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)||
-       (kind==2&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)||kind==3||
+       (kind==2&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)||
+       (kind==3&&(profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT||!device->color_full))||
        (kind==4&&profile!=TVB_PROFILE_COVER)||(kind>=5&&profile!=TVB_PROFILE_THERMOSTAT))return;
     if(message->payloadlen<=0||message->payloadlen>127)return;
     for(int i=0;i<message->payloadlen;i++)if(((const unsigned char*)message->payload)[i]<32)return;
@@ -593,14 +622,25 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
         if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected cover position %ld\n",value);
         return;
     }
+    if(kind==3){
+        char value[16],extra;unsigned hue,saturation;
+        if(message->payloadlen<=0||message->payloadlen>15)return;
+        memcpy(value,message->payload,(size_t)message->payloadlen);value[message->payloadlen]=0;
+        if(sscanf(value,"%u %u %c",&hue,&saturation,&extra)!=2||hue>=360||saturation>255){
+            fprintf(stderr,"mqtt_bridge: ignored invalid HS feedback\n");return;
+        }
+        char request[80];snprintf(request,sizeof(request),"HS %s %u %u\n",endpoint_id,hue,saturation);
+        if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected HS feedback\n");
+        return;
+    }
     if(kind==1||kind==2){
         if(message->payloadlen<=0||message->payloadlen>(kind==1?3:5))return;
         char value_text[8];
         if(message->payloadlen>=(int)sizeof(value_text))return;
         memcpy(value_text,message->payload,(size_t)message->payloadlen);value_text[message->payloadlen]=0;
         char *end=0;long value=strtol(value_text,&end,10);
-        long maximum=kind==1?100:65535;
-        if(end==value_text||*end||value<0||value>maximum){fprintf(stderr,"mqtt_bridge: ignored invalid numeric feedback\n");return;}
+        long minimum=kind==1?0:1000,maximum=kind==1?100:10000;
+        if(end==value_text||*end||value<minimum||value>maximum){fprintf(stderr,"mqtt_bridge: ignored invalid numeric feedback\n");return;}
         char request[80];snprintf(request,sizeof(request),kind==1?"LEVEL %s %ld\n":"COLOR_TEMP %s %ld\n",endpoint_id,value);
         if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected numeric feedback %ld\n",value);
         return;
@@ -622,7 +662,7 @@ static void mqtt_message(struct mosquitto *client,void *userdata,const struct mo
 static void mqtt_connect(struct mosquitto *client,void *userdata,int result){
     (void)userdata;
     if(result){fprintf(stderr,"mqtt_bridge: MQTT connect failed: %s\n",mosquitto_connack_string(result));return;}
-    const char *suffixes[]={"state","level","color_temperature","position","target_temperature","hvac_mode","timer","schedule"};
+    const char *suffixes[]={"state","level","color_temperature","hs","position","target_temperature","hvac_mode","timer","schedule"};
     for(size_t i=0;i<sizeof(suffixes)/sizeof(*suffixes);i++){
         char topic[TEXT_SIZE*2];snprintf(topic,sizeof(topic),"%s/device/+/%s/set",config.topic_prefix,suffixes[i]);
         mosquitto_subscribe(client,NULL,topic,1);

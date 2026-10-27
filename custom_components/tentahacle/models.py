@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
@@ -24,6 +25,7 @@ class VirtualDevice:
     name: str
     source_entity_id: str
     enabled: bool = True
+    color_full: bool = False
 
     def __post_init__(self) -> None:
         if not _ENDPOINT_UID.fullmatch(self.endpoint_uid):
@@ -31,19 +33,27 @@ class VirtualDevice:
         validate_device_name(self.name)
         if "." not in self.source_entity_id:
             raise ValueError("invalid Home Assistant entity ID")
+        if (
+            self.color_full
+            and self.profile is not DeviceProfile.COLOR_TEMPERATURE_LIGHT
+        ):
+            raise ValueError("full color requires the color-temperature profile")
 
     def management_payload(self, request_id: str) -> dict[str, object]:
         """Return a versioned idempotent upsert request."""
+        device: dict[str, object] = {
+            "uid": self.endpoint_uid,
+            "profile": self.profile.value,
+            "name": self.name,
+            "enabled": self.enabled,
+        }
+        if self.profile is DeviceProfile.COLOR_TEMPERATURE_LIGHT:
+            device["color_full"] = self.color_full
         return {
             "schema_version": PROTOCOL_VERSION,
             "request_id": request_id,
             "operation": "upsert_device",
-            "device": {
-                "uid": self.endpoint_uid,
-                "profile": self.profile.value,
-                "name": self.name,
-                "enabled": self.enabled,
-            },
+            "device": device,
         }
 
 
@@ -121,19 +131,48 @@ def bridge_details_from_discovery(topic: str, payload: str | bytes) -> tuple[str
 
 
 def profile_for_domain(
-    domain: str, *, color_temperature: bool = False
+    domain: str, *, supported_color_modes: Collection[str] | None = None
 ) -> DeviceProfile:
     """Return the default virtual profile for a Home Assistant domain."""
     if domain in {"switch", "input_boolean"}:
         return DeviceProfile.SWITCH
     if domain == "light":
-        return (
-            DeviceProfile.COLOR_TEMPERATURE_LIGHT
-            if color_temperature
-            else DeviceProfile.DIMMABLE_LIGHT
-        )
+        modes = set(supported_color_modes or ())
+        if modes == {"onoff"}:
+            return DeviceProfile.SWITCH
+        if modes & {"color_temp", "hs", "xy", "rgb", "rgbw", "rgbww"}:
+            return DeviceProfile.COLOR_TEMPERATURE_LIGHT
+        return DeviceProfile.DIMMABLE_LIGHT
     if domain == "cover":
         return DeviceProfile.COVER
     if domain == "climate":
         return DeviceProfile.THERMOSTAT
     raise ValueError(f"unsupported source domain: {domain}")
+
+
+def full_color_supported(supported_color_modes: Collection[str] | None) -> bool:
+    """Return whether Home Assistant can represent chromatic colour."""
+    return bool(
+        set(supported_color_modes or ()) & {"hs", "xy", "rgb", "rgbw", "rgbww"}
+    )
+
+
+def profiles_for_entity(
+    domain: str, supported_color_modes: Collection[str] | None = None
+) -> list[str]:
+    """Return compatible virtual profiles for one HA entity domain."""
+    if domain in {"switch", "input_boolean"}:
+        return [DeviceProfile.SWITCH.value]
+    if domain == "light":
+        modes = set(supported_color_modes or ())
+        profiles = [DeviceProfile.SWITCH.value]
+        if modes != {"onoff"}:
+            profiles.append(DeviceProfile.DIMMABLE_LIGHT.value)
+        if modes & {"color_temp", "hs", "xy", "rgb", "rgbw", "rgbww"}:
+            profiles.append(DeviceProfile.COLOR_TEMPERATURE_LIGHT.value)
+        return profiles
+    if domain == "cover":
+        return [DeviceProfile.COVER.value]
+    if domain == "climate":
+        return [DeviceProfile.THERMOSTAT.value]
+    return []

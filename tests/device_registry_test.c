@@ -95,4 +95,22 @@ static void capacity(void) {
     assert(r.devices[0].remote_id == UINT16_MAX && r.next_remote_id == 65536);
     assert(tvb_registry_add(&r, 1, "TVB0000000000000001", "No IDs", TVB_PROFILE_SWITCH, NULL) == TVB_REGISTRY_EXHAUSTED);
 }
-int main(void) { validation(); mutations(); capacity(); puts("device_registry_test: OK"); return 0; }
+static void color_capability(void) {
+    tvb_device_registry r, before;
+    tvb_registry_init(&r);
+    assert(tvb_registry_add(&r, 0, uid, "Colour", TVB_PROFILE_COLOR_TEMPERATURE_LIGHT, NULL) == TVB_REGISTRY_OK);
+    assert(!r.devices[0].color_full);
+    assert(tvb_registry_set_color_full(&r, 1, uid, 1) == TVB_REGISTRY_OK);
+    assert(r.devices[0].color_full && r.revision == 2 && r.devices[0].revision == 2);
+    before = r;
+    assert(tvb_registry_set_color_full(&r, 2, uid, 1) == TVB_REGISTRY_OK);
+    assert(!memcmp(&before, &r, sizeof(r)));
+    assert(tvb_registry_set_color_full(&r, 1, uid, 0) == TVB_REGISTRY_CONFLICT);
+    assert(tvb_registry_set_color_full(&r, 2, uid, 2) == TVB_REGISTRY_INVALID);
+    assert(!memcmp(&before, &r, sizeof(r)));
+    assert(tvb_registry_add(&r, 2, "TVB0000000000000001", "Switch", TVB_PROFILE_SWITCH, NULL) == TVB_REGISTRY_OK);
+    before = r;
+    assert(tvb_registry_set_color_full(&r, 3, "TVB0000000000000001", 1) == TVB_REGISTRY_INVALID);
+    assert(!memcmp(&before, &r, sizeof(r)));
+}
+int main(void) { validation(); mutations(); capacity(); color_capability(); puts("device_registry_test: OK"); return 0; }
