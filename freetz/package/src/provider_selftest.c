@@ -34,7 +34,9 @@ static int expect_control(const char *path,const char *command,int expected){
 /* Full-frame fixtures were captured from v0.1.4 (99bd3f2), independently of
  * the refactored encoders. Mask only clock-derived fields, never wire layout,
  * identity, capabilities, values or padding. Dynamic Fn98 fixtures additionally
- * encode the intentional paired-payload transport extension. Schedule
+ * encode the intentional paired-payload transport extension. The synthetic
+ * v0.1.4 actual temperature is normalized because current builds deliberately
+ * start it as unknown and test HA-provided values separately. Schedule
  * feedback preserves the current off/heat state rather than applying its
  * scheduled temperature (dynamic packet 47 keeps target=253/off).
  * Set TVB_PROVIDER_GOLDEN to opt in. */
@@ -54,6 +56,8 @@ static int verify_golden(const unsigned char *packet, unsigned length) {
    * checked against the original fixture. Timestamp units are checked below. */
   if(function==95&&length==48)memset(normalized+40,0,8);
   if(function==98&&length==416){memset(normalized+156,0,8);memset(normalized+356,0,8);}
+  if(function==23&&length==32){memset(normalized+24,0,4);normalized[27]=200;}
+  if(function==57&&length==40)normalized[28]=40;
   if((function==57||function==117)&&length==40)memset(normalized+32,0,4);
  }
  for(unsigned i=0;i<length;i++)snprintf(actual+i*2,3,"%02x",normalized[i]);
@@ -173,6 +177,13 @@ static int dynamic_test(void){
  CHECK(expect_control(path,"TIMER TVB0000000000000006 boost -1",0));
  CHECK(expect_control(path,"SCHEDULE TVB0000000000000006 active 4294967336 36 100 200",0));
  CHECK(expect_control(path,"SCHEDULE TVB0000000000000006 active 40 36 100 200",1));CHECK(frame(s[1],p,461,57)&&p[24]==253);CHECK(frame(s[1],p,461,55));
+ if(!golden_file){
+  CHECK(expect_control(path,"TARGET TVB0000000000000006 max",1));CHECK(frame(s[1],p,461,57)&&p[24]==253);
+  CHECK(expect_control(path,"MODE TVB0000000000000006 off",1));CHECK(frame(s[1],p,461,57)&&p[24]==253);
+  CHECK(expect_control(path,"MODE TVB0000000000000006 heat",1));CHECK(frame(s[1],p,461,57)&&p[24]==254);
+  CHECK(expect_control(path,"ACTUAL TVB0000000000000006 21.3",1));CHECK(frame(s[1],p,461,23)&&u32(p+24)==213);CHECK(frame(s[1],p,461,57)&&p[28]==43);
+  CHECK(expect_control(path,"ACTUAL TVB0000000000000006 unknown",1));CHECK(frame(s[1],p,461,23)&&u32(p+24)==(uint32_t)-9999);CHECK(frame(s[1],p,461,57)&&p[28]==255);
+ }
  int watch=socket(AF_UNIX,SOCK_SEQPACKET,0);struct sockaddr_un a={.sun_family=AF_UNIX};strcpy(a.sun_path,path);
  CHECK(watch>=0&&!connect(watch,(struct sockaddr*)&a,sizeof(a)));
  setsockopt(watch,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));
@@ -412,6 +423,13 @@ int main(void){
  if(event_length<=0)return 76;
  p[event_length]=0;
  if(!strstr((char*)p,"VIRT000000000006")||!strstr((char*)p,"\"target_temperature\":21.0"))return 77;
+ if(!golden_file){
+  thermostat_command[24]=254;
+  if(send(s[1],thermostat_command,sizeof(thermostat_command),0)!=(ssize_t)sizeof(thermostat_command))return 78;
+  if(recv(s[1],p,40,MSG_WAITALL)!=40||p[19]!=57||p[24]!=254)return 79;
+  event_length=recv(watch,p,sizeof(p)-1,0);if(event_length<=0)return 80;p[event_length]=0;
+  if(!strstr((char*)p,"VIRT000000000006")||!strstr((char*)p,"\"target_temperature\":\"max\""))return 81;
+ }
  unsigned char thermostat_timer[40]={7,3,0,40,0,0,0,3,1,199,0,0,0,0,0,24,
    0,0,0,117,0,16,0,0,0,0,0,1,0,0,3,0xe8,0,0,0,100,255,0x20,2,0};
  if(send(s[1],thermostat_timer,sizeof(thermostat_timer),0)!=(ssize_t)sizeof(thermostat_timer))return 89;

@@ -443,7 +443,7 @@ static int dynamic_control(char *cmd, size_t capacity) {
         (!strcmp(operation, "HS") && d->profile == TVB_PROFILE_COLOR_TEMPERATURE_LIGHT && d->color_full) ||
         (!strcmp(operation, "POSITION") && d->profile == TVB_PROFILE_COVER) ||
         (d->profile == TVB_PROFILE_THERMOSTAT && (!strcmp(operation, "TARGET") || !strcmp(operation,
-        "MODE") ||
+        "ACTUAL") || !strcmp(operation, "MODE") ||
         !strcmp(operation, "TIMER") || !strcmp(operation, "SCHEDULE")));
     if (!allowed || strlen(cmd+offset) >= sizeof(rest)) return 0;
     if (d->hanfun.unit_id && unit_generation[d-registry.devices] != generation) return 0;
@@ -651,7 +651,8 @@ static ssize_t send_frame(int fd, const void*buf, size_t n, int flags) {
             unsigned target = p[24];
             if ((target >= 16 && target <= 56) || target == 253 || target == 254) {
                 encoder.state->thermostat_target = target;
-                if (target >= 16 && target <= 56) encoder.state->thermostat_heat_target = target;
+                if ((target >= 16 && target <= 56) || target == 254)
+                    encoder.state->thermostat_heat_target = target;
                 encoder.state->thermostat_activated = read_be32(p+32);
                 command_count++;
                 last_command = target;
@@ -882,6 +883,22 @@ int close(int fd) {
  * restoring the legacy context; never send truncated JSON. */
 static int format_control_reply(char *reply, size_t capacity, int ok,
                                 const char *requested_uid) {
+    char thermostat_target[16], thermostat_actual[16];
+    if (encoder.state->thermostat_heat_target == 254)
+        strcpy(thermostat_target, "\"max\"");
+    else
+        snprintf(thermostat_target, sizeof(thermostat_target), "%u.%u",
+            encoder.state->thermostat_heat_target/2,
+            (encoder.state->thermostat_heat_target%2)*5);
+    if (encoder.state->thermostat_actual_deci == -9999)
+        strcpy(thermostat_actual, "null");
+    else {
+        int64_t actual = encoder.state->thermostat_actual_deci;
+        uint64_t magnitude = (uint64_t)(actual < 0 ? -actual:actual);
+        snprintf(thermostat_actual, sizeof(thermostat_actual), "%s%llu.%llu",
+            actual < 0 ? "-":"", (unsigned long long)(magnitude/10),
+            (unsigned long long)(magnitude%10));
+    }
     int length = snprintf(reply, capacity, "{\"ok\":%s"
         ",\"generation\":%u"
         ",\"connected\":%s"
@@ -902,8 +919,8 @@ static int format_control_reply(char *reply, size_t capacity, int ok,
         ",\"cover_position\":%u"
         ",\"cover_openclose_state\":%u"
         ",\"thermostat_mode\":\"%s\""
-        ",\"thermostat_target\":%u.%u"
-        ",\"thermostat_actual\":%u.%u"
+        ",\"thermostat_target\":%s"
+        ",\"thermostat_actual\":%s"
         ",\"thermostat_timer\":\"%s\""
         ",\"thermostat_timer_end\":%u"
         ",\"thermostat_schedule\":\"%s\""
@@ -920,8 +937,8 @@ static int format_control_reply(char *reply, size_t capacity, int ok,
         encoder.state->color_full, encoder.state->color_mode, encoder.state->color_temperature,
         encoder.state->color_hue, encoder.state->color_saturation, encoder.state->color_is_unmapped,
         encoder.state->cover_level, 100-encoder.state->cover_level, encoder.state->cover_openclose_state,
-        encoder.state->thermostat_target == 253 ? "off":"heat", encoder.state->thermostat_heat_target/2,
-        (encoder.state->thermostat_heat_target%2)*5, encoder.state->thermostat_actual/2, (encoder.state->thermostat_actual%2)*5,
+        encoder.state->thermostat_target == 253 ? "off":"heat", thermostat_target,
+        thermostat_actual,
         encoder.state->thermostat_timer_mode == 1 ? "boost":(encoder.state->thermostat_timer_mode == 3 ? "cold":"none"),
         encoder.state->thermostat_timer_end, encoder.state->thermostat_schedule_enabled ? "active":"disabled",
         encoder.state->thermostat_schedule_current/2, (encoder.state->thermostat_schedule_current%2)*5,
@@ -1055,19 +1072,52 @@ static void handle_control_client(int c, int watchers[4]) {
                 }
             }
             else if (!strncmp(cmd, "TARGET VIRT000000000006 ", 24)) {
-                char *end = 0;
-                double value = strtod(cmd+24, &end);
-                double scaled = value*2.0;
-                unsigned half = isfinite(value) && value >= 8.0 && value <= 28.0 ? (unsigned)(scaled+0.5):0;
-                double difference = scaled-(double) half;
-                if (difference < 0) difference = -difference;
-                if (end == cmd+24 || *end || !isfinite(value) || value < 8.0 || value > 28.0 || difference > 0.01) ok = 0;
-                else {
-                    encoder.state->thermostat_heat_target = half;
+                if (!strcmp(cmd+24, "max")) {
+                    encoder.state->thermostat_heat_target = 254;
                     if (encoder.state->thermostat_target != 253)
-                        encoder.state->thermostat_target = half;
+                        encoder.state->thermostat_target = 254;
                     encoder.state->thermostat_activated = (uint32_t) time(0);
                     ok = emit_thermostat_values(&encoder);
+                }
+                else {
+                    char *end = 0;
+                    double value = strtod(cmd+24, &end);
+                    double scaled = value*2.0;
+                    unsigned half = isfinite(value) && value >= 8.0 && value <= 28.0 ? (unsigned)(scaled+0.5):0;
+                    double difference = scaled-(double) half;
+                    if (difference < 0) difference = -difference;
+                    if (end == cmd+24 || *end || !isfinite(value) || value < 8.0 || value > 28.0 || difference > 0.01) ok = 0;
+                    else {
+                        encoder.state->thermostat_heat_target = half;
+                        if (encoder.state->thermostat_target != 253)
+                            encoder.state->thermostat_target = half;
+                        encoder.state->thermostat_activated = (uint32_t) time(0);
+                        ok = emit_thermostat_values(&encoder);
+                    }
+                }
+            }
+            else if (!strncmp(cmd, "ACTUAL VIRT000000000006 ", 24)) {
+                if (!strcmp(cmd+24, "unknown")) {
+                    encoder.state->thermostat_actual_deci = -9999;
+                    encoder.state->thermostat_actual = 255;
+                    ok = emit_thermostat_actual(&encoder);
+                }
+                else {
+                    char *end = 0;
+                    double value = strtod(cmd+24, &end);
+                    int in_range = isfinite(value) && value >= -50.0 && value <= 100.0;
+                    double scaled = in_range ? value*10.0:0;
+                    long deci = in_range ?
+                        (long)(scaled+(scaled >= 0 ? 0.5:-0.5)):0;
+                    double difference = scaled-(double) deci;
+                    if (difference < 0) difference = -difference;
+                    if (end == cmd+24 || *end || !in_range || difference > 0.01) ok = 0;
+                    else {
+                        encoder.state->thermostat_actual_deci = (int32_t) deci;
+                        encoder.state->thermostat_actual = value < 0 ? 255:
+                            (unsigned)(value*2.0+0.5);
+                        ok = emit_thermostat_actual(&encoder);
+                    }
                 }
             }
             else if (!strcmp(cmd, "MODE VIRT000000000006 off")) {

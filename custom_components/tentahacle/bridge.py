@@ -40,6 +40,7 @@ from .const import (
 )
 from .models import full_color_supported
 from .protocol import (
+    ClimateCapabilities,
     CoverCapabilities,
     ProtocolError,
     feedback_for_state,
@@ -145,6 +146,9 @@ class TentAHAcleBridge:
                 )
                 if DeviceProfile(mapping[CONF_PROFILE]) is DeviceProfile.THERMOSTAT:
                     await self._async_publish_schedule(uid, mapping)
+            elif DeviceProfile(mapping[CONF_PROFILE]) is DeviceProfile.THERMOSTAT:
+                await self._async_publish_feedback(uid, mapping, "unavailable", {})
+                await self._async_publish_schedule(uid, mapping)
 
         return listener
 
@@ -169,6 +173,10 @@ class TentAHAcleBridge:
                 if state is not None:
                     await self._async_publish_feedback(
                         uid, mapping, state.state, state.attributes
+                    )
+                elif DeviceProfile(mapping[CONF_PROFILE]) is DeviceProfile.THERMOSTAT:
+                    await self._async_publish_feedback(
+                        uid, mapping, "unavailable", {}
                     )
                 await self._async_publish_schedule(uid, mapping)
             await self._async_publish_reconciliation()
@@ -257,13 +265,13 @@ class TentAHAcleBridge:
             ):
                 await self._async_handle_timer(uid, mapping, command.values)
                 return
-            cover_capabilities = CoverCapabilities()
+            entity_capabilities: CoverCapabilities | ClimateCapabilities | None = None
             if profile is DeviceProfile.COVER:
                 source_state = self.hass.states.get(mapping[CONF_SOURCE_ENTITY_ID])
                 if source_state is not None:
                     features = source_state.attributes.get("supported_features")
                     if isinstance(features, int) and not isinstance(features, bool):
-                        cover_capabilities = CoverCapabilities(
+                        entity_capabilities = CoverCapabilities(
                             open=bool(features & CoverEntityFeature.OPEN),
                             close=bool(features & CoverEntityFeature.CLOSE),
                             stop=bool(features & CoverEntityFeature.STOP),
@@ -271,11 +279,38 @@ class TentAHAcleBridge:
                                 features & CoverEntityFeature.SET_POSITION
                             ),
                         )
+            elif profile is DeviceProfile.THERMOSTAT:
+                source_state = self.hass.states.get(mapping[CONF_SOURCE_ENTITY_ID])
+                maximum = (
+                    source_state.attributes.get("max_temp")
+                    if source_state is not None
+                    else None
+                )
+                temperature_unit = (
+                    source_state.attributes.get("temperature_unit")
+                    if source_state is not None
+                    else self.hass.config.units.temperature_unit
+                )
+                if not isinstance(temperature_unit, str):
+                    temperature_unit = str(temperature_unit)
+                normalized_maximum = None
+                if isinstance(maximum, (int, float)) and not isinstance(
+                    maximum, bool
+                ):
+                    try:
+                        normalized_maximum = float(maximum)
+                    except OverflowError:
+                        normalized_maximum = math.nan
+                    if not math.isfinite(normalized_maximum):
+                        normalized_maximum = None
+                entity_capabilities = ClimateCapabilities(
+                    normalized_maximum, temperature_unit
+                )
             domain, service, data = service_call_for_command(
                 profile,
                 mapping[CONF_SOURCE_ENTITY_ID],
                 command,
-                cover_capabilities=cover_capabilities,
+                entity_capabilities=entity_capabilities,
                 color_full=self._mapping_color_full(mapping),
             )
         except ProtocolError as err:
@@ -361,11 +396,18 @@ class TentAHAcleBridge:
                 if state is None:
                     raise ProtocolError("thermostat state is unavailable")
                 temperature = state.attributes.get("temperature")
+                normalized_temperature = math.nan
+                if isinstance(temperature, (int, float)) and not isinstance(
+                    temperature, bool
+                ):
+                    try:
+                        normalized_temperature = float(temperature)
+                    except OverflowError:
+                        normalized_temperature = math.nan
                 if (
                     state.state in {"unknown", "unavailable"}
-                    or not isinstance(temperature, (int, float))
-                    or isinstance(temperature, bool)
-                    or not 5 <= temperature <= 35
+                    or not math.isfinite(normalized_temperature)
+                    or not -100 <= normalized_temperature <= 300
                 ):
                     raise ProtocolError("thermostat state cannot be saved")
                 existing = ThermostatOverride(
@@ -373,7 +415,7 @@ class TentAHAcleBridge:
                     end_time=end_time,
                     entity_id=mapping[CONF_SOURCE_ENTITY_ID],
                     previous_hvac_mode=state.state,
-                    previous_temperature=float(temperature),
+                    previous_temperature=normalized_temperature,
                     previous_preset_mode=(
                         state.attributes.get("preset_mode")
                         if isinstance(state.attributes.get("preset_mode"), str)
@@ -567,6 +609,15 @@ class TentAHAcleBridge:
             state,
             attributes,
             color_full=self._mapping_color_full(mapping),
+            temperature_unit=(
+                str(
+                    attributes.get(
+                        "temperature_unit", self.hass.config.units.temperature_unit
+                    )
+                )
+                if DeviceProfile(mapping[CONF_PROFILE]) is DeviceProfile.THERMOSTAT
+                else "°C"
+            ),
         )
         for property_name, value in feedback.items():
             await mqtt.async_publish(

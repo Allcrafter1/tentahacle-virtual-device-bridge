@@ -61,12 +61,12 @@ static size_t screen_resync_cursor;
 static int provider_request(const char *request);
 enum feedback_kind {
     FEEDBACK_SET, FEEDBACK_LEVEL, FEEDBACK_COLOR_TEMP, FEEDBACK_HS,
-    FEEDBACK_POSITION, FEEDBACK_TARGET, FEEDBACK_MODE, FEEDBACK_TIMER,
-    FEEDBACK_SCHEDULE, FEEDBACK_COUNT
+    FEEDBACK_POSITION, FEEDBACK_TARGET, FEEDBACK_ACTUAL, FEEDBACK_MODE,
+    FEEDBACK_TIMER, FEEDBACK_SCHEDULE, FEEDBACK_COUNT
 };
 static char feedback_cache[TVB_REGISTRY_CAPACITY][FEEDBACK_COUNT][128];
 static const char *const feedback_operations[]={
-    "SET","LEVEL","COLOR_TEMP","HS","POSITION","TARGET","MODE","TIMER","SCHEDULE"
+    "SET","LEVEL","COLOR_TEMP","HS","POSITION","TARGET","ACTUAL","MODE","TIMER","SCHEDULE"
 };
 static int feedback_request(const char *request){
     char operation[24],uid[20];
@@ -283,7 +283,8 @@ static int finish_units_locked(void){
      * thermostat back to HEAT on each provider reconnect. */
     static const unsigned replay_order[]={
         FEEDBACK_SCHEDULE,FEEDBACK_SET,FEEDBACK_LEVEL,FEEDBACK_COLOR_TEMP,
-        FEEDBACK_HS,FEEDBACK_POSITION,FEEDBACK_TARGET,FEEDBACK_MODE,FEEDBACK_TIMER
+        FEEDBACK_HS,FEEDBACK_POSITION,FEEDBACK_ACTUAL,FEEDBACK_TARGET,
+        FEEDBACK_MODE,FEEDBACK_TIMER
     };
     for(size_t i=0;i<registry.count;i++)if(registry.devices[i].enabled)
         for(size_t order=0;order<FEEDBACK_COUNT;order++){
@@ -538,16 +539,16 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
     (void)client;(void)userdata;
     size_t prefix_length=strlen(config.topic_prefix);
     const char *device_prefix="/device/";
-    const char *suffixes[]={"/state/set","/level/set","/color_temperature/set","/hs/set","/position/set","/target_temperature/set","/hvac_mode/set","/timer/set","/schedule/set"};
+    const char *suffixes[]={"/state/set","/level/set","/color_temperature/set","/hs/set","/position/set","/target_temperature/set","/current_temperature/set","/hvac_mode/set","/timer/set","/schedule/set"};
     if(strncmp(message->topic,config.topic_prefix,prefix_length)||
        strncmp(message->topic+prefix_length,device_prefix,strlen(device_prefix)))return;
     const char *endpoint=message->topic+prefix_length+strlen(device_prefix);
     const char *suffix=0;unsigned kind;
-    for(kind=0;kind<9;kind++){
+    for(kind=0;kind<FEEDBACK_COUNT;kind++){
         const char *candidate=strstr(endpoint,suffixes[kind]);
         if(candidate&&!strcmp(candidate,suffixes[kind])){suffix=candidate;break;}
     }
-    if(!suffix||kind==9||suffix==endpoint||suffix-endpoint>31)return;
+    if(!suffix||kind==FEEDBACK_COUNT||suffix==endpoint||suffix-endpoint>31)return;
     char endpoint_id[32];memcpy(endpoint_id,endpoint,(size_t)(suffix-endpoint));endpoint_id[suffix-endpoint]=0;
     const tvb_device *device=tvb_registry_find(&registry,endpoint_id);
     if(!device||!device->enabled)return;
@@ -556,14 +557,20 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
         feedback_cache[device-registry.devices][kind][0]=0;
         return;
     }
-    if((kind==0&&profile!=TVB_PROFILE_SWITCH&&profile!=TVB_PROFILE_DIMMABLE_LIGHT&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)||
-       (kind==1&&profile!=TVB_PROFILE_DIMMABLE_LIGHT&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)||
-       (kind==2&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)||
-       (kind==3&&(profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT||!device->color_full))||
-       (kind==4&&profile!=TVB_PROFILE_COVER)||(kind>=5&&profile!=TVB_PROFILE_THERMOSTAT))return;
+    if((kind==FEEDBACK_SET&&profile!=TVB_PROFILE_SWITCH&&profile!=TVB_PROFILE_DIMMABLE_LIGHT&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)||
+       (kind==FEEDBACK_LEVEL&&profile!=TVB_PROFILE_DIMMABLE_LIGHT&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)||
+       (kind==FEEDBACK_COLOR_TEMP&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)||
+       (kind==FEEDBACK_HS&&(profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT||!device->color_full))||
+       (kind==FEEDBACK_POSITION&&profile!=TVB_PROFILE_COVER)||
+       (kind>=FEEDBACK_TARGET&&profile!=TVB_PROFILE_THERMOSTAT))return;
     if(message->payloadlen<=0||message->payloadlen>127)return;
     for(int i=0;i<message->payloadlen;i++)if(((const unsigned char*)message->payload)[i]<32)return;
-    if(kind==5){
+    if(kind==FEEDBACK_TARGET){
+        if(message->payloadlen==3&&!memcmp(message->payload,"max",3)){
+            char request[80];snprintf(request,sizeof(request),"TARGET %s max\n",endpoint_id);
+            if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected thermostat MAX target\n");
+            return;
+        }
         if(message->payloadlen<=0||message->payloadlen>5)return;
         char value_text[8];memcpy(value_text,message->payload,(size_t)message->payloadlen);value_text[message->payloadlen]=0;
         char *end=0;double value=strtod(value_text,&end);
@@ -577,7 +584,29 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
         if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected thermostat target %.1f\n",value);
         return;
     }
-    if(kind==6){
+    if(kind==FEEDBACK_ACTUAL){
+        if(message->payloadlen==7&&!memcmp(message->payload,"unknown",7)){
+            char request[80];snprintf(request,sizeof(request),"ACTUAL %s unknown\n",endpoint_id);
+            if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected unknown actual temperature\n");
+            return;
+        }
+        if(message->payloadlen<=0||message->payloadlen>6)return;
+        char value_text[8];memcpy(value_text,message->payload,(size_t)message->payloadlen);value_text[message->payloadlen]=0;
+        char *end=0;double value=strtod(value_text,&end);
+        int in_range=isfinite(value)&&value>= -50.0&&value<=100.0;
+        double scaled=in_range?value*10.0:0;
+        long deci=in_range?(long)(scaled+(scaled>=0?0.5:-0.5)):0;
+        double difference=scaled-(double)deci;if(difference<0)difference=-difference;
+        if(end==value_text||*end||!in_range||difference>0.01){
+            fprintf(stderr,"mqtt_bridge: ignored invalid actual temperature\n");return;
+        }
+        unsigned long magnitude=(unsigned long)(deci<0?-deci:deci);
+        char request[80];snprintf(request,sizeof(request),"ACTUAL %s %s%lu.%lu\n",endpoint_id,
+            deci<0?"-":"",magnitude/10,magnitude%10);
+        if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected actual temperature\n");
+        return;
+    }
+    if(kind==FEEDBACK_MODE){
         if(message->payloadlen<=0||message->payloadlen>4)return;
         char mode[5];memcpy(mode,message->payload,(size_t)message->payloadlen);mode[message->payloadlen]=0;
         if(strcmp(mode,"off")&&strcmp(mode,"heat")){fprintf(stderr,"mqtt_bridge: ignored invalid HVAC mode\n");return;}
@@ -585,7 +614,7 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
         if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected HVAC mode %s\n",mode);
         return;
     }
-    if(kind==7){
+    if(kind==FEEDBACK_TIMER){
         if(message->payloadlen<=0||message->payloadlen>31)return;
         char value[32];memcpy(value,message->payload,(size_t)message->payloadlen);value[message->payloadlen]=0;
         if(strcmp(value,"cancel")){
@@ -599,7 +628,7 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
         if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected thermostat timer %s\n",value);
         return;
     }
-    if(kind==8){
+    if(kind==FEEDBACK_SCHEDULE){
         if(message->payloadlen<=0||message->payloadlen>63)return;
         char value[64],request[128];
         memcpy(value,message->payload,(size_t)message->payloadlen);value[message->payloadlen]=0;
@@ -613,7 +642,7 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
         if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected thermostat schedule %s\n",value);
         return;
     }
-    if(kind==4){
+    if(kind==FEEDBACK_POSITION){
         if(message->payloadlen<=0||message->payloadlen>3)return;
         char value_text[8];memcpy(value_text,message->payload,(size_t)message->payloadlen);value_text[message->payloadlen]=0;
         char *end=0;long value=strtol(value_text,&end,10);
@@ -622,7 +651,7 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
         if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected cover position %ld\n",value);
         return;
     }
-    if(kind==3){
+    if(kind==FEEDBACK_HS){
         char value[16],extra;unsigned hue,saturation;
         if(message->payloadlen<=0||message->payloadlen>15)return;
         memcpy(value,message->payload,(size_t)message->payloadlen);value[message->payloadlen]=0;
@@ -633,15 +662,15 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
         if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected HS feedback\n");
         return;
     }
-    if(kind==1||kind==2){
-        if(message->payloadlen<=0||message->payloadlen>(kind==1?3:5))return;
+    if(kind==FEEDBACK_LEVEL||kind==FEEDBACK_COLOR_TEMP){
+        if(message->payloadlen<=0||message->payloadlen>(kind==FEEDBACK_LEVEL?3:5))return;
         char value_text[8];
         if(message->payloadlen>=(int)sizeof(value_text))return;
         memcpy(value_text,message->payload,(size_t)message->payloadlen);value_text[message->payloadlen]=0;
         char *end=0;long value=strtol(value_text,&end,10);
-        long minimum=kind==1?0:1000,maximum=kind==1?100:10000;
+        long minimum=kind==FEEDBACK_LEVEL?0:1000,maximum=kind==FEEDBACK_LEVEL?100:10000;
         if(end==value_text||*end||value<minimum||value>maximum){fprintf(stderr,"mqtt_bridge: ignored invalid numeric feedback\n");return;}
-        char request[80];snprintf(request,sizeof(request),kind==1?"LEVEL %s %ld\n":"COLOR_TEMP %s %ld\n",endpoint_id,value);
+        char request[80];snprintf(request,sizeof(request),kind==FEEDBACK_LEVEL?"LEVEL %s %ld\n":"COLOR_TEMP %s %ld\n",endpoint_id,value);
         if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected numeric feedback %ld\n",value);
         return;
     }
@@ -662,7 +691,7 @@ static void mqtt_message(struct mosquitto *client,void *userdata,const struct mo
 static void mqtt_connect(struct mosquitto *client,void *userdata,int result){
     (void)userdata;
     if(result){fprintf(stderr,"mqtt_bridge: MQTT connect failed: %s\n",mosquitto_connack_string(result));return;}
-    const char *suffixes[]={"state","level","color_temperature","hs","position","target_temperature","hvac_mode","timer","schedule"};
+    const char *suffixes[]={"state","level","color_temperature","hs","position","target_temperature","current_temperature","hvac_mode","timer","schedule"};
     for(size_t i=0;i<sizeof(suffixes)/sizeof(*suffixes);i++){
         char topic[TEXT_SIZE*2];snprintf(topic,sizeof(topic),"%s/device/+/%s/set",config.topic_prefix,suffixes[i]);
         mosquitto_subscribe(client,NULL,topic,1);

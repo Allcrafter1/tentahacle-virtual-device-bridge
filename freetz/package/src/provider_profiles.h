@@ -27,6 +27,7 @@ int emit_hanfun_light_config(struct provider_encoder *encoder);
 int emit_color_light_config(struct provider_encoder *encoder);
 int emit_cover_config(struct provider_encoder *encoder);
 int emit_thermostat_config(struct provider_encoder *encoder);
+int emit_thermostat_actual(struct provider_encoder *encoder);
 int emit_thermostat_values(struct provider_encoder *encoder);
 int emit_thermostat_timer(struct provider_encoder *encoder);
 int emit_thermostat_schedule(struct provider_encoder *encoder);

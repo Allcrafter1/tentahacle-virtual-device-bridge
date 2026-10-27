@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,6 +32,14 @@ class CoverCapabilities:
     close: bool = True
     stop: bool = True
     set_position: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class ClimateCapabilities:
+    """Home Assistant limits needed to preserve FRITZ thermostat semantics."""
+
+    max_temperature: float | None = None
+    temperature_unit: str = "°C"
 
 
 def parse_command(payload: str | bytes, expected_uid: str) -> BridgeCommand:
@@ -63,7 +72,7 @@ def service_call_for_command(
     entity_id: str,
     command: BridgeCommand,
     *,
-    cover_capabilities: CoverCapabilities | None = None,
+    entity_capabilities: CoverCapabilities | ClimateCapabilities | None = None,
     color_full: bool = False,
 ) -> tuple[str, str, dict[str, Any]]:
     """Translate a provider command to one Home Assistant service call."""
@@ -81,8 +90,13 @@ def service_call_for_command(
         return _light_service_call(profile, entity_id, values, color_full=color_full)
 
     if profile is DeviceProfile.COVER:
+        cover_capabilities = (
+            entity_capabilities
+            if isinstance(entity_capabilities, CoverCapabilities)
+            else CoverCapabilities()
+        )
         return _cover_service_call(
-            entity_id, values, cover_capabilities or CoverCapabilities()
+            entity_id, values, cover_capabilities
         )
 
     if profile is DeviceProfile.THERMOSTAT:
@@ -98,18 +112,40 @@ def service_call_for_command(
             )
         if mode == "heat" and "target_temperature" in values:
             temperature = values["target_temperature"]
+            climate_capabilities = (
+                entity_capabilities
+                if isinstance(entity_capabilities, ClimateCapabilities)
+                else ClimateCapabilities()
+            )
+            if temperature == "max":
+                maximum = climate_capabilities.max_temperature
+                normalized_maximum = _finite_float(maximum)
+                if normalized_maximum is None:
+                    raise ProtocolError("invalid climate maximum temperature")
+                return (
+                    "climate",
+                    "set_temperature",
+                    {
+                        "entity_id": entity_id,
+                        "temperature": normalized_maximum,
+                        "hvac_mode": "heat",
+                    },
+                )
             if (
                 not isinstance(temperature, (int, float))
                 or isinstance(temperature, bool)
                 or not 8 <= temperature <= 28
             ):
                 raise ProtocolError("invalid target temperature")
+            native_temperature = _celsius_to_native(
+                float(temperature), climate_capabilities.temperature_unit
+            )
             return (
                 "climate",
                 "set_temperature",
                 {
                     "entity_id": entity_id,
-                    "temperature": float(temperature),
+                    "temperature": native_temperature,
                     "hvac_mode": "heat",
                 },
             )
@@ -212,10 +248,13 @@ def feedback_for_state(
     attributes: dict[str, Any],
     *,
     color_full: bool = False,
+    temperature_unit: str = "°C",
 ) -> dict[str, str | None]:
     """Translate one HA state into retained provider feedback properties."""
     unavailable = state in {"unknown", "unavailable"}
     if unavailable:
+        if profile is DeviceProfile.THERMOSTAT:
+            return {"current_temperature": "unknown"}
         return {}
 
     if profile is DeviceProfile.SWITCH:
@@ -286,19 +325,7 @@ def feedback_for_state(
         return {}
 
     if profile is DeviceProfile.THERMOSTAT:
-        result = {}
-        temperature = attributes.get("temperature")
-        if (
-            isinstance(temperature, (int, float))
-            and not isinstance(temperature, bool)
-            and 7.5 <= temperature <= 28.5
-        ):
-            rounded = round(float(temperature) * 2) / 2
-            if 8 <= rounded <= 28:
-                result["target_temperature"] = f"{rounded:.1f}"
-        # Publish mode last so an OFF snapshot wins over its remembered setpoint.
-        result["hvac_mode"] = "off" if state == "off" else "heat"
-        return result
+        return _thermostat_feedback(state, attributes, temperature_unit)
 
     return {}
 
@@ -323,3 +350,66 @@ def _integer(values: dict[str, Any], key: str, minimum: int, maximum: int) -> in
     ):
         raise ProtocolError(f"invalid {key}")
     return value
+
+
+def _thermostat_feedback(
+    state: str, attributes: dict[str, Any], temperature_unit: str
+) -> dict[str, str]:
+    """Translate target, actual temperature and mode in a deterministic order."""
+    result: dict[str, str] = {}
+    normalized_temperature = _finite_float(attributes.get("temperature"))
+    if normalized_temperature is not None:
+        maximum = _finite_float(attributes.get("max_temp"))
+        is_maximum = maximum is not None and math.isclose(
+            normalized_temperature, maximum, abs_tol=0.01
+        )
+        if is_maximum:
+            result["target_temperature"] = "max"
+        else:
+            celsius = _native_to_celsius(normalized_temperature, temperature_unit)
+            rounded = round(celsius * 2) / 2 if celsius is not None else None
+            if rounded is not None and 8 <= rounded <= 28:
+                result["target_temperature"] = f"{rounded:.1f}"
+    current_temperature = _finite_float(attributes.get("current_temperature"))
+    current_celsius = (
+        _native_to_celsius(current_temperature, temperature_unit)
+        if current_temperature is not None
+        else None
+    )
+    result["current_temperature"] = (
+        f"{current_celsius:.1f}"
+        if current_celsius is not None and -50 <= current_celsius <= 100
+        else "unknown"
+    )
+    # Publish mode last so an OFF snapshot wins over its remembered setpoint.
+    result["hvac_mode"] = "off" if state == "off" else "heat"
+    return result
+
+
+def _finite_float(value: object) -> float | None:
+    """Return one finite non-boolean number without leaking conversion errors."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    try:
+        normalized = float(value)
+    except (OverflowError, ValueError):
+        return None
+    return normalized if math.isfinite(normalized) else None
+
+
+def _native_to_celsius(value: float, unit: str) -> float | None:
+    """Convert an HA state-machine temperature into the FRITZ Celsius unit."""
+    if unit in {"°C", "C"}:
+        return value
+    if unit in {"°F", "F"}:
+        return (value - 32) * 5 / 9
+    return None
+
+
+def _celsius_to_native(value: float, unit: str) -> float:
+    """Convert a FRITZ Celsius setpoint into the HA state-machine unit."""
+    if unit in {"°C", "C"}:
+        return value
+    if unit in {"°F", "F"}:
+        return value * 9 / 5 + 32
+    raise ProtocolError("unsupported climate temperature unit")

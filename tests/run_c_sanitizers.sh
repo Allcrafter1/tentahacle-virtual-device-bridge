@@ -54,6 +54,8 @@ AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_CONTROL_PATH="$audit_build/catalog.sock" \
 AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_CONTROL_PATH="$audit_build/dynamic.sock" \
     TVB_PROVIDER_GOLDEN=tests/fixtures/provider-v0.1.4-dynamic.hex \
     LD_PRELOAD="$audit_asan:$audit_build/provider.so" "$audit_build/selftest"
+AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_CONTROL_PATH="$audit_build/current.sock" \
+    LD_PRELOAD="$audit_asan:$audit_build/provider.so" "$audit_build/selftest"
 AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_LEGACY=1 AHA_VIRTUAL_HANFUN_EXPERIMENT=1 \
     AHA_VIRTUAL_CONTROL_PATH="$audit_build/legacy.sock" \
     LD_PRELOAD="$audit_asan:$audit_build/provider.so" "$audit_build/selftest"

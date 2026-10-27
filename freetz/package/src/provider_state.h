@@ -6,7 +6,8 @@
 
 /* One independent value set per registered device. The provider mutex guards
  * both the selected pointer and these values. Cover level is AVM's closed
- * percentage; thermostat temperatures are half degrees Celsius. */
+ * percentage. Thermostat setpoints and thermostat_actual are half degrees
+ * Celsius; thermostat_actual_deci is tenths of a degree Celsius. */
 struct provider_state {
     uint32_t switch_state;
     uint32_t light_state;
@@ -27,6 +28,7 @@ struct provider_state {
     uint32_t thermostat_reduced;
     uint32_t thermostat_comfort;
     uint32_t thermostat_actual;
+    int32_t thermostat_actual_deci;
     uint32_t thermostat_offset;
     uint32_t thermostat_battery;
     uint32_t thermostat_heat_target;
@@ -67,7 +69,8 @@ static inline int provider_advance_hanfun_timestamp(struct provider_state *state
     .thermostat_target = 40, \
     .thermostat_reduced = 36, \
     .thermostat_comfort = 44, \
-    .thermostat_actual = 40, \
+    .thermostat_actual = 255, \
+    .thermostat_actual_deci = -9999, \
     .thermostat_battery = 100, \
     .thermostat_heat_target = 40, \
     .thermostat_timer_mode = 255, \

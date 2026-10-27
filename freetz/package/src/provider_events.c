@@ -26,7 +26,7 @@ int provider_event_format(const struct command_event *event,
         "{\"event\":\"command\",\"endpoint\":\"%s\",\"hvac_mode\":\"off\",\"sequence\":%u}\n",
         event->endpoint, event->sequence);
     else if (event->has_thermostat && event->target_temperature == 254) length = snprintf(message, capacity,
-        "{\"event\":\"command\",\"endpoint\":\"%s\",\"hvac_mode\":\"heat\",\"sequence\":%u}\n",
+        "{\"event\":\"command\",\"endpoint\":\"%s\",\"hvac_mode\":\"heat\",\"target_temperature\":\"max\",\"sequence\":%u}\n",
         event->endpoint, event->sequence);
     else if (event->has_thermostat) length = snprintf(message, capacity,
         "{\"event\":\"command\",\"endpoint\":\"%s\",\"hvac_mode\":\"heat\",\"target_temperature\":%u.%u,\"sequence\":%u}\n",

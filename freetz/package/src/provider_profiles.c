@@ -191,7 +191,7 @@ static int emit_thermostat_temperature(struct provider_encoder *encoder) {
     unsigned char body[8] = {
         0
     };
-    write_be32(body, encoder->state->thermostat_actual*5);
+    write_be32(body, (uint32_t) encoder->state->thermostat_actual_deci);
     write_be32(body+4, 0);
     return emit_direct_payload(encoder, 455, 23, body, sizeof(body));
 }
@@ -207,6 +207,10 @@ int emit_thermostat_values(struct provider_encoder *encoder) {
     body[4] = (unsigned char) encoder->state->thermostat_actual;
     write_be32(body+8, encoder->state->thermostat_activated);
     return emit_direct_payload(encoder, 455, 57, body, sizeof(body));
+}
+
+int emit_thermostat_actual(struct provider_encoder *encoder) {
+    return emit_thermostat_temperature(encoder) && emit_thermostat_values(encoder);
 }
 
 static int emit_thermostat_state(struct provider_encoder *encoder) {

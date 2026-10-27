@@ -30,6 +30,7 @@ def bridge_methods() -> dict:
     bridge = next(node for node in tree.body if isinstance(node, ast.ClassDef))
     names = {
         "async_stop",
+        "_state_listener",
         "_async_sync_bridge",
         "_async_schedule_tick",
         "_async_publish_schedule",
@@ -67,6 +68,7 @@ def bridge_methods() -> dict:
         "CONF_SCHEDULE_WORKDAYS": "schedule_workdays",
         "CONF_SCHEDULE_HOLIDAYS": "schedule_holidays",
         "mqtt": SimpleNamespace(async_publish=AsyncMock()),
+        "callback": lambda value: value,
         "dt_util": SimpleNamespace(
             utcnow=lambda: datetime.fromtimestamp(1000, UTC),
         ),
@@ -93,6 +95,48 @@ def test_missing_schedule_adapter_clears_retained_schedule() -> None:
         "disabled",
         qos=1,
         retain=True,
+    )
+
+
+def test_missing_thermostat_state_clears_retained_actual_temperature() -> None:
+    methods = bridge_methods()
+    mapping = {
+        CONF_PROFILE: DeviceProfile.THERMOSTAT.value,
+        CONF_SOURCE_ENTITY_ID: "climate.room",
+    }
+    bridge = SimpleNamespace(
+        _stopping=False,
+        _sync_lock=asyncio.Lock(),
+        _mappings={"uid": mapping},
+        hass=SimpleNamespace(states=SimpleNamespace(get=lambda _: None)),
+        _async_publish_management=AsyncMock(),
+        _async_publish_feedback=AsyncMock(),
+        _async_publish_schedule=AsyncMock(),
+        _async_publish_reconciliation=AsyncMock(),
+    )
+    asyncio.run(methods["_async_sync_bridge"](bridge))
+    bridge._async_publish_feedback.assert_awaited_once_with(  # noqa: SLF001
+        "uid", mapping, "unavailable", {}
+    )
+
+
+def test_removed_thermostat_state_clears_actual_and_schedule() -> None:
+    methods = bridge_methods()
+    mapping = {
+        CONF_PROFILE: DeviceProfile.THERMOSTAT.value,
+        CONF_SOURCE_ENTITY_ID: "climate.room",
+    }
+    bridge = SimpleNamespace(
+        _async_publish_feedback=AsyncMock(),
+        _async_publish_schedule=AsyncMock(),
+    )
+    listener = methods["_state_listener"](bridge, "uid", mapping)
+    asyncio.run(listener(SimpleNamespace(data={"new_state": None})))
+    bridge._async_publish_feedback.assert_awaited_once_with(  # noqa: SLF001
+        "uid", mapping, "unavailable", {}
+    )
+    bridge._async_publish_schedule.assert_awaited_once_with(  # noqa: SLF001
+        "uid", mapping
     )
 
 

@@ -70,6 +70,11 @@ static void events(void) {
     event.thermostat_timer_previous = 3;
     assert(provider_event_format(&event, message, sizeof(message)) > 0);
     assert(strstr(message, "\"timer_action\":\"cancel\",\"timer_previous\":\"cold\""));
+    event.has_thermostat_timer = 0;
+    event.has_thermostat = 1;
+    event.target_temperature = 254;
+    assert(provider_event_format(&event, message, sizeof(message)) > 0);
+    assert(strstr(message, "\"target_temperature\":\"max\""));
 
     struct provider_event_queue queue = {0};
     assert(!provider_event_pop(&queue, &event));

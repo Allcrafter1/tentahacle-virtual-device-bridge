@@ -63,6 +63,7 @@ jobs:
       - run: /tmp/provider_startup_test /tmp/virtual_provider.so bind
       - run: LD_PRELOAD=/tmp/provider_thread_failure.so /tmp/provider_startup_test /tmp/virtual_provider.so thread
       - run: TVB_PROVIDER_GOLDEN=tests/fixtures/provider-v0.1.4-dynamic.hex AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_CONTROL_PATH=/tmp/tvb-provider-dynamic.sock LD_PRELOAD=/tmp/virtual_provider.so /tmp/provider_selftest
+      - run: AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_CONTROL_PATH=/tmp/tvb-provider-current.sock LD_PRELOAD=/tmp/virtual_provider.so /tmp/provider_selftest
       - run: AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_LEGACY=1 AHA_VIRTUAL_HANFUN_EXPERIMENT=1 AHA_VIRTUAL_CONTROL_PATH=/tmp/tvb-provider-legacy.sock LD_PRELOAD=/tmp/virtual_provider.so /tmp/provider_selftest
 
   c-sanitizers:

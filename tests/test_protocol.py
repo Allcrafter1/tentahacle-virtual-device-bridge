@@ -5,6 +5,7 @@ import pytest
 
 from custom_components.tentahacle.const import DeviceProfile
 from custom_components.tentahacle.protocol import (
+    ClimateCapabilities,
     CoverCapabilities,
     ProtocolError,
     feedback_for_state,
@@ -212,7 +213,7 @@ def test_binary_cover_maps_end_positions_to_supported_actions(
         DeviceProfile.COVER,
         "cover.blind",
         parsed,
-        cover_capabilities=CoverCapabilities(
+        entity_capabilities=CoverCapabilities(
             open=True, close=True, stop=False, set_position=False
         ),
     ) == ("cover", service, {"entity_id": "cover.blind"})
@@ -227,7 +228,7 @@ def test_binary_cover_rejects_unsupported_intermediate_position() -> None:
             DeviceProfile.COVER,
             "cover.blind",
             parsed,
-            cover_capabilities=CoverCapabilities(
+            entity_capabilities=CoverCapabilities(
                 open=True, close=True, stop=False, set_position=False
             ),
         )
@@ -242,7 +243,7 @@ def test_cover_rejects_unsupported_stop() -> None:
             DeviceProfile.COVER,
             "cover.blind",
             parsed,
-            cover_capabilities=CoverCapabilities(stop=False),
+            entity_capabilities=CoverCapabilities(stop=False),
         )
 
 
@@ -260,7 +261,7 @@ def test_position_only_cover_maps_actions_to_end_positions(
         DeviceProfile.COVER,
         "cover.blind",
         parsed,
-        cover_capabilities=CoverCapabilities(
+        entity_capabilities=CoverCapabilities(
             open=False, close=False, stop=False, set_position=True
         ),
     ) == (
@@ -290,7 +291,131 @@ def test_cover_feedback_handles_binary_and_position_covers(
 def test_state_feedback_rounds_climate_to_half_degrees() -> None:
     assert feedback_for_state(
         DeviceProfile.THERMOSTAT, "heat", {"temperature": 20.26}
-    ) == {"hvac_mode": "heat", "target_temperature": "20.5"}
+    ) == {
+        "target_temperature": "20.5",
+        "current_temperature": "unknown",
+        "hvac_mode": "heat",
+    }
+
+
+def test_thermostat_max_command_uses_source_maximum() -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","hvac_mode":"heat",'
+        '"target_temperature":"max","sequence":7}'
+    )
+    assert service_call_for_command(
+        DeviceProfile.THERMOSTAT,
+        "climate.room",
+        parsed,
+        entity_capabilities=ClimateCapabilities(max_temperature=35.0),
+    ) == (
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.room", "temperature": 35.0, "hvac_mode": "heat"},
+    )
+
+
+def test_thermostat_feedback_preserves_max_and_actual_temperature() -> None:
+    assert feedback_for_state(
+        DeviceProfile.THERMOSTAT,
+        "heat",
+        {"temperature": 35.0, "max_temp": 35.0, "current_temperature": 20.34},
+    ) == {
+        "target_temperature": "max",
+        "current_temperature": "20.3",
+        "hvac_mode": "heat",
+    }
+
+
+def test_thermostat_feedback_preserves_max_while_off() -> None:
+    feedback = feedback_for_state(
+        DeviceProfile.THERMOSTAT,
+        "off",
+        {"temperature": 35.0, "max_temp": 35.0, "current_temperature": 19.8},
+    )
+    assert feedback["target_temperature"] == "max"
+    assert feedback["hvac_mode"] == "off"
+
+
+@pytest.mark.parametrize(
+    "temperature", [float("nan"), float("inf"), -float("inf"), 10**400, -51, 101]
+)
+def test_invalid_actual_temperature_is_explicitly_unknown(
+    temperature: float,
+) -> None:
+    assert feedback_for_state(
+        DeviceProfile.THERMOSTAT,
+        "heat",
+        {"temperature": 20, "current_temperature": temperature},
+    )["current_temperature"] == "unknown"
+
+
+def test_thermostat_max_command_requires_source_maximum() -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","hvac_mode":"heat",'
+        '"target_temperature":"max","sequence":7}'
+    )
+    with pytest.raises(ProtocolError):
+        service_call_for_command(DeviceProfile.THERMOSTAT, "climate.room", parsed)
+
+
+def test_fahrenheit_climate_command_converts_fritz_celsius() -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","hvac_mode":"heat",'
+        '"target_temperature":20.0,"sequence":7}'
+    )
+    assert service_call_for_command(
+        DeviceProfile.THERMOSTAT,
+        "climate.room",
+        parsed,
+        entity_capabilities=ClimateCapabilities(
+            max_temperature=95.0, temperature_unit="°F"
+        ),
+    ) == (
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.room", "temperature": 68.0, "hvac_mode": "heat"},
+    )
+
+
+def test_fahrenheit_climate_feedback_converts_to_fritz_celsius() -> None:
+    assert feedback_for_state(
+        DeviceProfile.THERMOSTAT,
+        "heat",
+        {"temperature": 68.0, "max_temp": 95.0, "current_temperature": 72.0},
+        temperature_unit="°F",
+    ) == {
+        "target_temperature": "20.0",
+        "current_temperature": "22.2",
+        "hvac_mode": "heat",
+    }
+
+
+def test_fahrenheit_max_feedback_and_command_keep_native_maximum() -> None:
+    feedback = feedback_for_state(
+        DeviceProfile.THERMOSTAT,
+        "heat",
+        {"temperature": 95.0, "max_temp": 95.0, "current_temperature": 68.0},
+        temperature_unit="°F",
+    )
+    assert feedback["target_temperature"] == "max"
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","hvac_mode":"heat",'
+        '"target_temperature":"max","sequence":7}'
+    )
+    assert service_call_for_command(
+        DeviceProfile.THERMOSTAT,
+        "climate.room",
+        parsed,
+        entity_capabilities=ClimateCapabilities(95.0, "°F"),
+    )[2]["temperature"] == 95.0
+
+
+@pytest.mark.parametrize("state", ["unknown", "unavailable"])
+def test_unavailable_thermostat_clears_actual_temperature(state: str) -> None:
+    assert feedback_for_state(DeviceProfile.THERMOSTAT, state, {}) == {
+        "current_temperature": "unknown"
+    }
 
 
 def test_parser_rejects_topic_payload_endpoint_mismatch() -> None:
@@ -307,7 +432,7 @@ def test_parser_rejects_topic_payload_endpoint_mismatch() -> None:
 def test_feedback_ignores_invalid_temperature(temperature: float) -> None:
     assert feedback_for_state(
         DeviceProfile.THERMOSTAT, "heat", {"temperature": temperature}
-    ) == {"hvac_mode": "heat"}
+    ) == {"current_temperature": "unknown", "hvac_mode": "heat"}
 
 
 @pytest.mark.parametrize("state", ["[]", "{}", "true"])
@@ -323,6 +448,7 @@ def test_thermostat_feedback_publishes_mode_after_target() -> None:
     feedback = feedback_for_state(DeviceProfile.THERMOSTAT, "off", {"temperature": 21})
     assert list(feedback.items()) == [
         ("target_temperature", "21.0"),
+        ("current_temperature", "unknown"),
         ("hvac_mode", "off"),
     ]
 

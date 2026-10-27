@@ -41,7 +41,8 @@ static pid_t fake_provider(const char *path){
     assert(!bind(listener,(struct sockaddr*)&address,sizeof(address))&&!listen(listener,8));
     pid_t child=fork();assert(child>=0);
     if(!child){
-        unsigned id=456,renamed=0,units=0,target=40;int conflict=0,present=1,remove_failure=0;
+        unsigned id=456,renamed=0,units=0,target=40,heat_target=40;
+        int actual=-9999,conflict=0,present=1,remove_failure=0;
         for(;;){
             int fd=accept(listener,NULL,NULL);if(fd<0)_exit(2);
             char command[256],reply[512];ssize_t n=recv(fd,command,sizeof(command)-1,0);
@@ -59,24 +60,33 @@ static pid_t fake_provider(const char *path){
             if(!strncmp(command,"RENAME ",7)){conflict=0;renamed++;}
             if(!strncmp(command,"UNIT ",5))units++;
             if(!strncmp(command,"SCHEDULE ",9))target=40;
-            if(!strncmp(command,"TARGET ",7))target=43;
+            if(!strncmp(command,"TARGET ",7)){
+                if(strstr(command," max"))heat_target=254;
+                else {double value=0;assert(sscanf(strrchr(command,' ')+1,"%lf",&value)==1);heat_target=(unsigned)(value*2+0.5);}
+                if(target!=253)target=heat_target;
+            }
+            if(!strncmp(command,"ACTUAL ",7)){
+                if(strstr(command," unknown"))actual=-9999;
+                else {double value=0;assert(sscanf(strrchr(command,' ')+1,"%lf",&value)==1);actual=(int)(value*10+(value>=0?0.5:-0.5));}
+            }
             if(!strncmp(command,"MODE ",5)&&strstr(command," off"))target=253;
-            snprintf(reply,sizeof(reply),"{\"ok\":%s,\"connected\":true,\"generation\":7,\"remote_id\":%u,\"profile\":\"color_temperature_light\",\"renamed\":%u,\"units\":%u,\"target\":%u,\"present\":%s}",
-                (conflict&&!strncmp(command,"RESTORE ",8))||(remove_failure&&!strncmp(command,"REMOVE ",7))?"false":"true",id,renamed,units,target,present?"true":"false");
+            if(!strncmp(command,"MODE ",5)&&strstr(command," heat"))target=heat_target;
+            snprintf(reply,sizeof(reply),"{\"ok\":%s,\"connected\":true,\"generation\":7,\"remote_id\":%u,\"profile\":\"color_temperature_light\",\"renamed\":%u,\"units\":%u,\"target\":%u,\"actual\":%d,\"present\":%s}",
+                (conflict&&!strncmp(command,"RESTORE ",8))||(remove_failure&&!strncmp(command,"REMOVE ",7))?"false":"true",id,renamed,units,target,actual,present?"true":"false");
             (void)send(fd,reply,strlen(reply),MSG_NOSIGNAL);close(fd);
         }
     }
     close(listener);return child;
 }
 static void profile_matrix_and_cache(void){
-    static const char *kinds[]={"state","level","color_temperature","hs","position","target_temperature","hvac_mode","timer","schedule"};
-    static const char *values[]={"ON","55","2700","120 100","60","20.5","heat","boost 2000","active 40 36 50 60"};
-    static const unsigned allowed[]={1u,3u,7u,1u<<4,(1u<<5)|(1u<<6)|(1u<<7)|(1u<<8)};
+    static const char *kinds[]={"state","level","color_temperature","hs","position","target_temperature","current_temperature","hvac_mode","timer","schedule"};
+    static const char *values[]={"ON","55","2700","120 100","60","20.5","21.3","heat","boost 2000","active 40 36 50 60"};
+    static const unsigned allowed[]={1u,3u,7u,1u<<4,(1u<<5)|(1u<<6)|(1u<<7)|(1u<<8)|(1u<<9)};
     tvb_registry_init(&registry);provider_ready=0;
     for(unsigned profile=0;profile<TVB_PROFILE_COUNT;profile++){
         char uid[20];snprintf(uid,sizeof(uid),"TVB%016X",profile+1);
         assert(tvb_registry_add(&registry,registry.revision,uid,"Matrix",(tvb_device_profile)profile,NULL)==TVB_REGISTRY_OK);
-        for(unsigned kind=0;kind<9;kind++){
+        for(unsigned kind=0;kind<FEEDBACK_COUNT;kind++){
             memset(feedback_cache,0,sizeof(feedback_cache));
             feedback(uid,kinds[kind],values[kind]);
             int cached=0;for(unsigned field=0;field<FEEDBACK_COUNT;field++)cached|=*feedback_cache[profile][field]!=0;
@@ -168,6 +178,13 @@ int main(void){
     feedback(registry.devices[1].uid,"target_temperature","inf");assert(!*feedback_cache[1][FEEDBACK_TARGET]);
     feedback(registry.devices[1].uid,"target_temperature","20.5");assert(strstr(feedback_cache[1][FEEDBACK_TARGET],"20.5"));
     feedback(registry.devices[1].uid,"target_temperature","20.2");assert(strstr(feedback_cache[1][FEEDBACK_TARGET],"20.5"));
+    feedback(registry.devices[1].uid,"target_temperature","max");assert(strstr(feedback_cache[1][FEEDBACK_TARGET],"max"));
+    feedback(registry.devices[1].uid,"current_temperature","nan");assert(!*feedback_cache[1][FEEDBACK_ACTUAL]);
+    feedback(registry.devices[1].uid,"current_temperature","21.3");assert(strstr(feedback_cache[1][FEEDBACK_ACTUAL],"21.3"));
+    feedback(registry.devices[1].uid,"current_temperature","unknown");assert(strstr(feedback_cache[1][FEEDBACK_ACTUAL],"unknown"));
+    feedback(registry.devices[1].uid,"current_temperature","21.34");assert(strstr(feedback_cache[1][FEEDBACK_ACTUAL],"unknown"));
+    feedback(registry.devices[1].uid,"current_temperature","-50.0");assert(strstr(feedback_cache[1][FEEDBACK_ACTUAL],"-50.0"));
+    feedback(registry.devices[1].uid,"current_temperature","100.1");assert(strstr(feedback_cache[1][FEEDBACK_ACTUAL],"-50.0"));
     feedback(registry.devices[1].uid,"timer","boost 4294967296");assert(!*feedback_cache[1][FEEDBACK_TIMER]);
     feedback(registry.devices[1].uid,"timer","boost 9999999999999999999999999");assert(!*feedback_cache[1][FEEDBACK_TIMER]);
     feedback(registry.devices[1].uid,"schedule","active 4294967336 36 50 60");assert(!*feedback_cache[1][FEEDBACK_SCHEDULE]);
@@ -254,12 +271,24 @@ int main(void){
     registry.devices[0].profile=TVB_PROFILE_THERMOSTAT;
     memset(feedback_cache,0,sizeof(feedback_cache));provider_ready=0;
     feedback(registry.devices[0].uid,"schedule","active 40 36 50 60");
+    feedback(registry.devices[0].uid,"current_temperature","21.3");
     feedback(registry.devices[0].uid,"target_temperature","21.5");
     feedback(registry.devices[0].uid,"hvac_mode","off");
     unit_due=time(NULL)-1;assert(finish_units_locked());
-    status=provider_query("GET");assert(cJSON_GetObjectItem(status,"target")->valueint==253);cJSON_Delete(status);
+    status=provider_query("GET");assert(cJSON_GetObjectItem(status,"target")->valueint==253);
+    assert(cJSON_GetObjectItem(status,"actual")->valueint==213);cJSON_Delete(status);
     feedback_cache[0][FEEDBACK_MODE][0]=0;unit_due=time(NULL)-1;assert(finish_units_locked());
     status=provider_query("GET");assert(cJSON_GetObjectItem(status,"target")->valueint==43);cJSON_Delete(status);
+    feedback(registry.devices[0].uid,"target_temperature","max");
+    feedback(registry.devices[0].uid,"hvac_mode","off");
+    feedback(registry.devices[0].uid,"current_temperature","unknown");
+    unit_due=time(NULL)-1;assert(finish_units_locked());
+    status=provider_query("GET");assert(cJSON_GetObjectItem(status,"target")->valueint==253);
+    assert(cJSON_GetObjectItem(status,"actual")->valueint==-9999);cJSON_Delete(status);
+    feedback_cache[0][FEEDBACK_MODE][0]=0;
+    snprintf(feedback_cache[0][FEEDBACK_MODE],128,"MODE %s heat\n",registry.devices[0].uid);
+    unit_due=time(NULL)-1;assert(finish_units_locked());
+    status=provider_query("GET");assert(cJSON_GetObjectItem(status,"target")->valueint==254);cJSON_Delete(status);
     registry=before_replay;memset(feedback_cache,0,sizeof(feedback_cache));
     assert(provider_request("TEST WRONG_ID"));assert(!reconcile_provider_locked()&&!provider_ready);
     assert(provider_request("TEST NAME_CONFLICT"));assert(reconcile_provider_locked());
