@@ -101,9 +101,9 @@ int main(void) {
     assert(!registry.devices[0].color_full);
     assert(device_values[0].color_mode == 2 && !device_values[0].color_is_unmapped);
 
-    /* Dynamic virtual lights deliberately clamp at both exact palette
-     * endpoints. The current value is echoed immediately and no command is
-     * queued for Home Assistant. */
+    /* FRITZ!OS presents its Kelvin palette as a cycle. Endpoint jumps are
+     * ordinary absolute commands and must complete the same round trip as
+     * neighboring steps. */
     unsigned char temperature[46];
     unsigned sequence = command_count;
     encoder.fd = 1;
@@ -111,38 +111,42 @@ int main(void) {
     temperature_frame(temperature, device->remote_id, 6500);
     assert(send_frame(incoming_fd, temperature, sizeof(temperature), 0) ==
            (ssize_t)sizeof(temperature));
-    assert(device_values[0].color_temperature == 2700);
-    assert(command_count == sequence && !provider_event_pop(&event_queue, &event));
+    assert(device_values[0].color_temperature == 6500);
+    assert(command_count == sequence + 1 && provider_event_pop(&event_queue, &event));
+    assert(event.has_color && event.color_mode == 2 &&
+           event.color_temperature == 6500);
     assert(captured_size == 46 && read_be32(captured + 28) == 108 &&
-           read_be16(captured + 40) == 2700);
+           read_be16(captured + 40) == 6500);
 
-    device_values[0].color_temperature = 6500;
     captured_size = 0;
     temperature_frame(temperature, device->remote_id, 2700);
     assert(send_frame(incoming_fd, temperature, sizeof(temperature), 0) ==
            (ssize_t)sizeof(temperature));
-    assert(device_values[0].color_temperature == 6500);
-    assert(command_count == sequence && !provider_event_pop(&event_queue, &event));
-    assert(captured_size == 46 && read_be16(captured + 40) == 6500);
+    assert(device_values[0].color_temperature == 2700);
+    assert(command_count == sequence + 2 && provider_event_pop(&event_queue, &event));
+    assert(event.has_color && event.color_mode == 2 &&
+           event.color_temperature == 2700);
+    assert(captured_size == 46 && read_be16(captured + 40) == 2700);
 
     /* Neighboring values still take the ordinary command path. */
-    temperature_frame(temperature, device->remote_id, 5900);
+    temperature_frame(temperature, device->remote_id, 3000);
     assert(send_frame(incoming_fd, temperature, sizeof(temperature), 0) ==
            (ssize_t)sizeof(temperature));
-    assert(device_values[0].color_temperature == 5900 && command_count == sequence + 1);
+    assert(device_values[0].color_temperature == 3000 &&
+           command_count == sequence + 3);
     assert(provider_event_pop(&event_queue, &event));
-    assert(event.has_color && event.color_mode == 2 && event.color_temperature == 5900);
+    assert(event.has_color && event.color_mode == 2 &&
+           event.color_temperature == 3000);
     assert(!provider_event_pop(&event_queue, &event));
 
-    /* The compatibility-only fixed endpoint keeps its previous cyclic
-     * behavior; the policy applies only to registry-backed dynamic devices. */
+    /* The compatibility-only fixed endpoint uses the same native cycle. */
     legacy_enabled = 1;
     legacy_state.color_mode = 2;
     legacy_state.color_temperature = 6500;
     temperature_frame(temperature, 453, 2700);
     assert(send_frame(incoming_fd, temperature, sizeof(temperature), 0) ==
            (ssize_t)sizeof(temperature));
-    assert(legacy_state.color_temperature == 2700 && command_count == sequence + 2);
+    assert(legacy_state.color_temperature == 2700 && command_count == sequence + 4);
     assert(provider_event_pop(&event_queue, &event));
     assert(event.has_color && event.color_temperature == 2700);
 

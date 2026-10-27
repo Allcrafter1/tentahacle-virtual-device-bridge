@@ -210,10 +210,12 @@ stop_watchdog() {
 	fi
 	kill "$watchdog_pid" 2>/dev/null
 	# BusyBox ash may finish the current recovery backoff before acting on TERM.
+	# Wait until the PID is reaped, not merely until /proc/PID/cmdline becomes
+	# empty for a zombie. Freetz's modlib checks the original PID with kill -0
+	# after stop() returns and otherwise reports a false restart failure.
 	remaining=40
 	while [ "$remaining" -gt 0 ]; do
-		if [ ! -r "/proc/$watchdog_pid/cmdline" ] ||
-			! grep -q 'rc.tentahacle' "/proc/$watchdog_pid/cmdline"; then
+		if ! kill -0 "$watchdog_pid" 2>/dev/null; then
 			rm -f "$WATCHDOG_PID"
 			return 0
 		fi
@@ -241,10 +243,11 @@ stop_bridge() {
 	kill "$bridge_pid" 2>/dev/null
 	# A registry update may be inside a bounded 30-second modsave.  The bridge
 	# deliberately lets that flash write finish instead of killing it midway.
+	# As above, wait for process reaping so modlib's own kill -0 check observes
+	# the same completed stop instead of a transient zombie.
 	remaining=40
 	while [ "$remaining" -gt 0 ]; do
-		if [ ! -r "/proc/$bridge_pid/cmdline" ] ||
-			! grep -q 'tentahacle-mqtt-bridge' "/proc/$bridge_pid/cmdline"; then
+		if ! kill -0 "$bridge_pid" 2>/dev/null; then
 			rm -f "$BRIDGE_PID"
 			return 0
 		fi

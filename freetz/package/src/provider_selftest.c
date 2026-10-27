@@ -221,22 +221,23 @@ static int dynamic_test(void){
  n=recv(watch,event,sizeof(event)-1,0);CHECK(n>0);event[n]=0;CHECK(strstr(event,"TVB0000000000000001"));
  unsigned char ct[46]={7,3,0,46,0,0,0,3,1,203,0,0,0,0,0,30,0,0,0,118,0,22,0,0,0,1,0,0,0,0,0,108,0,10,0,0,0,0,0,2,0x0f,0xa0,0,0,0,0};
  if(!golden_file){
-  /* Unlike stock FRITZ!OS, dynamic virtual lights hold the exact Kelvin
-   * endpoint. Both attempted wraps must echo the old value without a WATCH
-   * event, while an ordinary neighboring step must still be delivered. */
+  /* Native endpoint cycles are ordinary absolute commands. They and a
+   * neighboring step must all reach WATCH and echo the requested value. */
   CHECK(expect_control(path,"COLOR_TEMP TVB0000000000000004 6500",1));
   CHECK(frame(s[1],p,459,118)&&u16(p+40)==6500);
-  ct[40]=0x0a;ct[41]=0x8c; /* Native 6500 -> 2700 wrap attempt. */
+  ct[40]=0x0a;ct[41]=0x8c; /* Native 6500 -> 2700 cycle. */
   CHECK(send(s[1],ct,sizeof(ct),0)==sizeof(ct));
-  CHECK(frame(s[1],p,459,118)&&u16(p+40)==6500);
-  wait.fd=watch;CHECK(poll(&wait,1,50)==0);
+  CHECK(frame(s[1],p,459,118)&&u16(p+40)==2700);
+  n=recv(watch,event,sizeof(event)-1,0);CHECK(n>0);event[n]=0;
+  CHECK(strstr(event,"TVB0000000000000004")&&strstr(event,"\"color_temperature\":2700"));
   CHECK(expect_control(path,"COLOR_TEMP TVB0000000000000004 2700",1));
   CHECK(frame(s[1],p,459,118)&&u16(p+40)==2700);
-  ct[40]=0x19;ct[41]=0x64; /* Native 2700 -> 6500 wrap attempt. */
+  ct[40]=0x19;ct[41]=0x64; /* Native 2700 -> 6500 cycle. */
   CHECK(send(s[1],ct,sizeof(ct),0)==sizeof(ct));
-  CHECK(frame(s[1],p,459,118)&&u16(p+40)==2700);
-  CHECK(poll(&wait,1,50)==0);
-  ct[40]=0x0b;ct[41]=0xb8; /* A normal 2700 -> 3000 step. */
+  CHECK(frame(s[1],p,459,118)&&u16(p+40)==6500);
+  n=recv(watch,event,sizeof(event)-1,0);CHECK(n>0);event[n]=0;
+  CHECK(strstr(event,"TVB0000000000000004")&&strstr(event,"\"color_temperature\":6500"));
+  ct[40]=0x0b;ct[41]=0xb8; /* An ordinary palette command. */
   CHECK(send(s[1],ct,sizeof(ct),0)==sizeof(ct));
   CHECK(frame(s[1],p,459,118)&&u16(p+40)==3000);
   n=recv(watch,event,sizeof(event)-1,0);CHECK(n>0);event[n]=0;

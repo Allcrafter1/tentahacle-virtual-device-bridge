@@ -127,14 +127,13 @@ Die exakten Daten stehen unter
 Bekannte Grenzen des aktuellen Kandidaten:
 
 - Die Farbtemperaturseite kennt genau neun native Kelvinstufen. Kurze
-  Tastendrücke laufen durch diese Stufen. Obwohl FRITZ!OS 8.25 am jeweiligen
-  Ende normalerweise zum anderen Ende der Skala springt, hält die Bridge
-  dynamische virtuelle Lampen bewusst bei 2700 beziehungsweise 6500 K und
-  sendet für diesen Sprung keinen Home-Assistant-Befehl. Dieses absichtlich
-  nicht-native Produktverhalten verändert keine physischen oder anderen
-  nativen Geräte. Lampen ohne echten `color_temp`-Modus können Kelvin in Home
-  Assistant nur über Farbe emulieren, und ein Lampenbereich ohne eine der neun
-  Stufen ist nicht vollständig abbildbar.
+  Tastendrücke laufen durch diese Stufen; FRITZ!OS 8.25 springt dabei am Ende
+  jeweils zum anderen Ende der Skala. Die Bridge behält dieses native
+  Verhalten bei, weil der absolute Endpunktbefehl nicht zuverlässig erkennen
+  lässt, ob er durch diesen Sprung entstanden ist. Lampen ohne echten
+  `color_temp`-Modus können Kelvin in Home Assistant nur über Farbe emulieren,
+  und ein Lampenbereich ohne eine der neun Stufen ist nicht vollständig
+  abbildbar.
 - Binäre Rollläden melden bestätigte Endpositionen, aber während der Fahrt
   keine erfundene Position. Nicht unterstützte Stopp- oder
   Zwischenpositionsbefehle werden abgewiesen.

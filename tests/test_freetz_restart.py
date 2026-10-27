@@ -99,6 +99,46 @@ rmdir "$TESTPROC"
         assert not pid_file.exists()
 
 
+def test_shutdown_waits_until_each_process_is_reaped(tmp_path: Path) -> None:
+    for function, variable, pid_variable, command in (
+        ("stop_bridge", "BRIDGE_PID", "bridge_pid", "tentahacle-mqtt-bridge"),
+        ("stop_watchdog", "WATCHDOG_PID", "watchdog_pid", "rc.tentahacle watchdog"),
+    ):
+        body = shell_function(function)
+        fake_proc = tmp_path / (function + "-reap")
+        fake_proc.mkdir()
+        (fake_proc / "cmdline").write_text(command)
+        pid_file = tmp_path / (function + "-reap.pid")
+        pid_file.write_text("123\n")
+        script = f"""
+TESTPROC={shlex.quote(str(fake_proc))}
+{variable}={shlex.quote(str(pid_file))}
+checks=0
+kill() {{
+    if [ "$1" = -0 ]; then
+        checks=$((checks + 1))
+        [ "$checks" -lt 3 ]
+        return
+    fi
+    return 0
+}}
+sleep() {{ :; }}
+{body.replace(f'/proc/${pid_variable}', '${TESTPROC}')}
+{function}
+echo result:$? checks:$checks
+"""
+        result = subprocess.run(
+            ["/bin/sh", "-s"],
+            input=script,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.splitlines() == ["result:0 checks:3"]
+        assert not pid_file.exists()
+
+
 def test_recovery_never_starts_stock_while_old_aha_is_still_alive() -> None:
     script = (
         shell_function("recover_virtual_aha")

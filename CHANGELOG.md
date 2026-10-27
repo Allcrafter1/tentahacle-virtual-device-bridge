@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0-rc3 - 2026-10-27
+
+- Restore the native cyclic FRITZ!OS color-temperature selector: endpoint
+  changes from 6500 to 2700 K and from 2700 to 6500 K now follow the same
+  confirmed command/state round trip as every neighboring step. The previous
+  backend-only clamp could not distinguish a wrap from an intentional direct
+  endpoint selection and could disagree with the 440's optimistic display.
+- Keep the independent Kelvin feedback correction from rc2. Physical values
+  such as 2702, 3003, 4716 and 6535 K are still normalized onto the exact
+  nine-value FRITZ!OS palette before replay.
+
+This candidate must be installed as a matched FRITZ!Box and Home Assistant
+pair. Automated, installed/runtime and physical-controller evidence are
+reported separately in `docs/release-validation.md`.
+
 ## 0.3.0-rc2 - 2026-10-27
 
 - Keep dynamic virtual color-temperature lights at an exact 2700 or 6500 K
