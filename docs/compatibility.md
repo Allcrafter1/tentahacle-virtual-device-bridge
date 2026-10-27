@@ -24,10 +24,11 @@ recommended latency topology: commands from the 6690 master to virtual
 endpoints on the 7530 took about 6–7 seconds in the laboratory. Direct pairing
 of the 440 with the dedicated bridge box is the target topology.
 
-Version 0.3.0-rc.1 completes the existing profile round trips and the bounded
+The 0.3.0 candidate source extends the existing profile round trips and bounded
 recovery/security audit. Its host, parser, fault-injection and sanitizer suites
-pass. Physical qualification of the newly completed color, cover and thermostat
-paths, recovery cases and native FRITZ!OS automations remains tracked in
-[`release-validation.md`](release-validation.md). Until that checklist passes,
-the candidate is suitable for the dedicated laboratory box but not yet the
-recommended seven-controller production rollout.
+pass, but this does not establish that the same revision is installed on the
+laboratory box. Physical qualification of color, cover and thermostat paths,
+recovery cases and native FRITZ!OS automations remains tracked in
+[`release-validation.md`](release-validation.md). Until the exact built
+revision passes that checklist, it is neither the recommended seven-controller
+production rollout nor a final release.

@@ -318,8 +318,9 @@ must not be edited on a virtual thermostat.
 4. Choose a FRITZ device name. The immutable endpoint is created and confirmed
    by the bridge.
 5. Follow the final wizard page's direct FRITZ!OS link and place or configure
-   the device there. The safe base URL is extended with `/?lp=sh_dev` so the
-   link opens Smart Home directly, including configured port/proxy paths. The
+   the device there. The safe base URL is extended with
+   `#/smart-home/devices` so the link opens Smart Home directly, including
+   configured port/proxy paths. The
    persistent completion notification and the bridge
    device named **Open the FRITZ!OS interface** remain permanent alternatives.
    Screen layout and its short display label remain FRITZ!OS responsibilities.
@@ -330,10 +331,21 @@ When a mapped thermostat has no recognized schedule adapter, setpoint, mode,
 Boost and cold continue to work; only the native next-change schedule display
 stays disabled.
 
-Home Assistant owns virtual-device creation, renaming, rebinding and deletion,
-with a hard limit of 32 devices per bridge. FRITZ!OS remains the editor for 440
-screen placement and for native templates, scenarios and routines. Those
-native automation features are intentionally not recreated in the bridge.
+Home Assistant owns virtual-device creation, renaming, rebinding and deletion.
+The current bridge implementation conservatively limits each bridge to 32
+devices. The value comes from the compile-time C registry/cache arrays
+(`TVB_REGISTRY_CAPACITY`) and the matching Home Assistant guard
+(`MAX_VIRTUAL_DEVICES`); no 5-bit or other 32-device protocol field has been
+identified. Raising it requires changing both sides together, rebuilding the
+package and testing registry persistence and devices 33 onward on the lab box.
+It is not a proven FRITZ!OS or `aha` limit. AVM separately documents up to 50
+devices registered directly with this box, but also type-specific limits such
+as 30 third-party HAN-FUN devices; those public radio-registration limits do
+not prove how injected mixed-profile units behave above 32. See
+[AVM knowledge document 3729](https://fritz.com/de-lu/apps/knowledge-base/FRITZ-Box-7530/3729_Anzahl-und-Typ-der-Smart-Home-Gerate-die-an-FRITZ-Box-angemeldet-werden-konnen).
+FRITZ!OS remains the editor for 440 screen placement and for native templates,
+scenarios and routines. Those native automation features are intentionally not
+recreated in the bridge.
 
 ## Known FRITZ!OS and 440 presentation limits
 
@@ -547,7 +559,8 @@ failure modes that matter on a dedicated long-running bridge:
   HA Celsius/Fahrenheit conversion and explicit clearing of stale schedules.
   External changes cancel active overrides, and deletion/rebinding/hub removal
   restores saved source state instead of leaving a real thermostat at MAX/OFF.
-- The native capacity of 32 devices is enforced in HA. Prune-before-upsert
+- The bridge's currently implemented capacity of 32 devices is enforced in HA;
+  it is not a demonstrated native FRITZ!OS/`aha` ceiling. Prune-before-upsert
   permits replacement at full capacity, and the complete desired devices,
   confirmed values and timer state are replayed on reconnect and once per
   minute.

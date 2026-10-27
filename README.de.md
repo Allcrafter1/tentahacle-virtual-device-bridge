@@ -88,12 +88,16 @@ Gerät kann auf mehreren Bedieneinheiten liegen. Beim Austausch einer
 Home-Assistant-Entität können FRITZ!-Identität und vorhandene 440-Zuweisungen
 erhalten bleiben.
 
-Eine Bridge unterstützt höchstens **32 virtuelle Geräte**. Anlegen, Umbenennen,
-Neubinden und Löschen erfolgen in Home Assistant; beim Löschen eines Mappings
-wird auch das native Gerät entfernt. Das virtuelle Elterngerät lässt sich in
-FRITZ!OS absichtlich nicht unabhängig löschen. FRITZ!OS bleibt für das
-Controller-Layout sowie native Vorlagen, Szenarien und Routinen zuständig; die
-Bridge baut diese Funktionen nicht in Home Assistant nach.
+Eine Bridge unterstützt derzeit höchstens **32 virtuelle Geräte**. Das ist
+eine konservative Grenze unserer statisch dimensionierten Registry und der
+Home-Assistant-Oberfläche, keine nachgewiesene FRITZ!OS- oder `aha`-Grenze.
+Dasselbe virtuelle Gerät darf auf mehreren 440 liegen und zählt trotzdem nur
+einmal. Anlegen, Umbenennen, Neubinden und Löschen erfolgen in Home Assistant;
+beim Löschen eines Mappings wird auch das native Gerät entfernt. Das virtuelle
+Elterngerät lässt sich in FRITZ!OS absichtlich nicht unabhängig löschen.
+FRITZ!OS bleibt für das Controller-Layout sowie native Vorlagen, Szenarien und
+Routinen zuständig; die Bridge baut diese Funktionen nicht in Home Assistant
+nach.
 
 ## Aktuelle Kompatibilität und Grenzen
 
@@ -122,6 +126,11 @@ Die exakten Daten stehen unter
 
 Bekannte Grenzen des aktuellen Kandidaten:
 
+- Die Farbtemperaturseite kennt genau neun native Kelvinstufen. Kurze
+  Tastendrücke laufen durch diese Stufen; FRITZ!OS 8.25 springt am jeweiligen
+  Ende nativ zum anderen Ende der Skala. Lampen ohne echten `color_temp`-Modus
+  können Kelvin in Home Assistant nur über Farbe emulieren, und ein
+  Lampenbereich ohne eine der neun Stufen ist nicht vollständig abbildbar.
 - Binäre Rollläden melden bestätigte Endpositionen, aber während der Fahrt
   keine erfundene Position. Nicht unterstützte Stopp- oder
   Zwischenpositionsbefehle werden abgewiesen.
@@ -142,14 +151,15 @@ Bekannte Grenzen des aktuellen Kandidaten:
 ### Projektstand und Mitmachen
 
 Das Projekt ist funktionierende experimentelle Software und noch kein fertiges
-Produkt. Die unterstützten Profile, dauerhafte Geräteverwaltung,
-MQTT-Wiederherstellung und der direkte 440-Befehlspfad besitzen automatisierte
-Tests und wurden auf dem beschriebenen Laboraufbau praktisch geprüft. Vor einem
-breiten Rollout fehlen noch gezielte Hardwaretests für wiederholtes Warm/Kalt
-und mehrere Farben, binäre und positionierbare Rollläden, vollständiges
-Thermostat-Timer-/Neustartverhalten sowie je eine harmlose native Vorlage, ein
-Szenario und eine Routine. Besonders hilfreich sind längere Praxistests und
-Prüfungen auf zusätzlicher unterstützter Hardware. Nachvollziehbare Ergebnisse bitte über
+Produkt. Der auf dem beschriebenen Laboraufbau laufende Altstand ist nicht mit
+dem jeweils neuesten Quellstand gleichzusetzen. Neue Korrekturen gelten erst
+nach Installation und einem gezielten Hardwaretest als praktisch bestätigt.
+Vor einem breiten Rollout fehlen noch gezielte Hardwaretests für wiederholtes
+Warm/Kalt und mehrere Farben, binäre und positionierbare Rollläden,
+vollständiges Thermostat-Timer-/Neustartverhalten sowie je eine harmlose native
+Vorlage, ein Szenario und eine Routine. Besonders hilfreich sind längere
+Praxistests und Prüfungen auf zusätzlicher unterstützter Hardware.
+Nachvollziehbare Ergebnisse bitte über
 [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues) melden.
 
 Dieses Repository verteilt keine AVM-Firmware, keine AVM-Programme und keine

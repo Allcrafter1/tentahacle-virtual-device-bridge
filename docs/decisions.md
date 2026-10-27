@@ -39,7 +39,11 @@ The current choices are:
 11. **One persistent virtual device per mapped HA entity.** A stable endpoint
     can be assigned to several 440s and keeps one coherent state. Rebinding an
     entity preserves that identity; changing profile creates a new device.
-    The bridge enforces the native maximum of 32 devices.
+    The bridge currently enforces a conservative implementation limit of 32
+    devices through matching bounded C arrays and a Home Assistant guard. This
+    is not claimed as a native FRITZ!OS or `aha` maximum; a higher capacity
+    requires a coordinated rebuild plus a dedicated persistence and runtime
+    lab test for devices 33 onward.
 12. **FRITZ!OS owns presentation and native automation.** FRITZ!OS remains the
     editor for 440 pages, short labels, templates, scenarios and routines. The
     bridge supplies native-compatible endpoints but does not duplicate those

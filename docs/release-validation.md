@@ -19,10 +19,13 @@ Before building firmware, all of the following must pass from a clean checkout:
 - clean `git diff --check`, documented version/changelog and no AVM binary or
   generated firmware committed to the repository.
 
-The current source includes automated coverage for full Kelvin/HS state,
-binary and position covers, Celsius/Fahrenheit thermostat translation,
-OFF/MAX/current temperature, restart-safe timers, 32-device capacity,
-HA-authoritative deletion, registry persistence and watchdog transitions.
+The current source includes automated coverage for exact-palette Kelvin/HS
+state, off-palette Kelvin normalization at both software boundaries, binary and
+position covers (including float positions), Celsius/Fahrenheit thermostat
+translation, OFF/MAX/current temperature, restart-safe timers, the current
+32-device implementation capacity, URL fragments, HA-authoritative deletion,
+registry persistence and watchdog transitions. Automated coverage is not a
+claim that the same revision is installed or physically confirmed.
 
 ## Physical function matrix
 
@@ -33,7 +36,7 @@ other six controllers.
 |---|---|---|---|
 | Switch/socket | `switch`, `input_boolean`, reduced on/off `light`; commands and external feedback | Toggle from 440 and HA, then reopen the 440 page | Both directions agree after every action |
 | Dimming | Scaling, off-with-value command, retained replay | Repeated slow and fast up/down; off then set a value; HA restart | Requested final percentage reaches HA and reopening shows it |
-| Kelvin/full color | Kelvin and HS roundtrip, mode switch and stale retained-mode clearing | Warm/cold repeatedly, at least three palette colors, HA -> 440, Kelvin <-> color, provider reconnect | Correct source mode/value each time; no old color returns after reconnect |
+| Kelvin/full color | Kelvin and HS roundtrip, exact-palette normalization, mode switch and stale retained-mode clearing | Use short presses through all nine Kelvin values and both endpoints; HA -> 440; Kelvin <-> color; provider reconnect | Correct source mode/value each time; non-exact source feedback returns as the nearest native value; no old color returns after reconnect. FRITZ!OS's native endpoint wrap is recorded separately, not confused with an invalid-value reset |
 | Binary cover | Open/close, 0/100 feedback, no invented moving endpoint | Cover without `current_position`; open/close and observe `opening`/`closing` | Commands work; page shows confirmed endpoint after completion |
 | Position cover | Set position, endpoint fallback, capability rejection, optional stop | 25/50/75 %, stop during travel, external HA position change | HA and reopened 440 page agree; unsupported actions are not offered/forwarded |
 | Thermostat basics | Compatible-source filter, 8–28 °C, heat/off, MAX, current temperature, C/F | Ordinary +/- including OFF/MAX; change measured temperature externally | Correct HA service/value and correct state after reopening the page |
@@ -41,7 +44,7 @@ other six controllers.
 | 5+2 shadow schedule | Parsing, current/next calculation, stale schedule clearing | Use validated Zigbee2MQTT adapter and confirm next-change time | Display matches HA schedule; FRITZ edits do not become authority |
 | Mapping lifecycle | Stable UID, rebind, delete, whole-hub cleanup | Rebind keeps 440 placement; delete removes endpoint; repeat with an active timer | Old climate is restored and no stale native device remains |
 | Native automation | Protocol endpoint is native; selection/persistence observed | Activate one harmless template per profile, one multi-device scenario and one routine | HA action occurs and confirmed state returns; unsupported FRITZ trigger types are documented |
-| Capacity/link | 32 limit, prune-before-upsert, deep-link construction | 31 -> 32 -> rejected 33; replace one at full capacity; open all three HA links | No partial registry, replacement succeeds, links open Smart Home |
+| Capacity/link | Current 32-device implementation limit, prune-before-upsert, fragment deep-link construction | 31 -> 32 -> rejected 33; replace one at full capacity; save and open `http://192.168.178.38/#/smart-home/devices` from all three HA links | No partial registry, replacement succeeds, links open Smart Home; capacity is not described as a native ceiling |
 
 The lack of immediate refresh on an already open 440 page is not a failure: it
 was reproduced with an original FRITZ!Thermo. Reopening the page must show the
@@ -77,6 +80,13 @@ remaining six 440s.
   end-position calibration warning. No unverified calibration data is faked.
 - Binary covers do not report invented intermediate positions. Stop and numeric
   positions require the corresponding HA capabilities.
+- FRITZ!OS 8.25 natively wraps the nine-step color-temperature selector from
+  6500 back to 2700 K and from 2700 to 6500 K. This is separate from the fixed
+  invalid-feedback reset. A non-wrapping product policy would require an
+  explicit, separately reviewed behavior change rather than a protocol bug fix.
+- A source light with no real `color_temp` mode may emulate Kelvin as chromatic
+  color, and a source range that contains none of the nine native presets has
+  no fully faithful 440 representation.
 - A thermostat value above 28 °C that is not exact source MAX has no native
   FRITZ representation. Non-bridged Thermo editor settings and the displayed
   synthetic battery are not source configuration/telemetry.
@@ -90,8 +100,10 @@ remaining six 440s.
 ## Release decision
 
 The candidate is ready to flash to the laboratory 7530 when the automated gate
-is green and the firmware artifact was built for the exact fingerprint. It is
-ready for seven-controller production use and public release when the physical
-function and recovery matrices have no critical failure or reproducible major
-functional defect. Cosmetic limitations above are acceptable when documented;
-new speculative enhancements are not release blockers.
+is green, the firmware artifact was built from the exact reviewed commit and a
+backup/cutover plan protects the currently installed legacy identities. It is
+ready for seven-controller production use and public release only when the
+installed-version check plus the physical function and recovery matrices have
+no critical failure or reproducible major functional defect. Cosmetic
+limitations above are acceptable when documented; new speculative enhancements
+are not release blockers.

@@ -78,11 +78,14 @@ between the virtual FRITZ! device and the real entity. One virtual device can be
 placed on several controllers, and replacing the mapped Home Assistant entity
 can preserve its FRITZ! identity and existing 440 assignments.
 
-A bridge supports at most **32 virtual devices**. Create, rename, rebind and
-delete them in Home Assistant; deleting a mapping also removes its native
-device. The virtual parent is deliberately not independently deletable in
-FRITZ!OS. Use FRITZ!OS for controller layout and for native templates, scenes
-and routines—the bridge does not recreate those features in Home Assistant.
+A bridge currently supports at most **32 virtual devices**. This is a
+conservative limit of our statically sized registry and Home Assistant UI, not
+a proven FRITZ!OS or `aha` limit. The same virtual device may be placed on
+several 440s and still counts only once. Create, rename, rebind and delete
+devices in Home Assistant; deleting a mapping also removes its native device.
+The virtual parent is deliberately not independently deletable in FRITZ!OS.
+Use FRITZ!OS for controller layout and for native templates, scenes and
+routines—the bridge does not recreate those features in Home Assistant.
 
 ## Current compatibility and limitations
 
@@ -109,6 +112,11 @@ See [Compatibility](docs/compatibility.md) for the exact baseline.
 
 Known boundaries of the current candidate:
 
+- the color-temperature page has exactly nine native Kelvin presets. Short
+  presses traverse them; FRITZ!OS 8.25 natively wraps from either endpoint to
+  the other. Lights without a real `color_temp` mode can only emulate Kelvin
+  through color in Home Assistant, and a light range containing none of the
+  nine presets cannot be represented faithfully;
 - binary covers report confirmed end positions but do not invent a position
   while moving; unsupported stop or intermediate-position commands are rejected;
 - FRITZ!OS can show the virtual blind's parent as a light/LED and can warn about
@@ -125,14 +133,15 @@ Known boundaries of the current candidate:
 
 ### Project status and contributions
 
-This is working experimental software, not a finished appliance. The supported
-profiles, persistent device lifecycle, MQTT recovery and direct 440 command
-path have automated tests and have been exercised on the documented laboratory
-setup. Before broad deployment, the release candidate still needs focused
-hardware checks for repeated warm/cold and color changes, binary and
-positionable covers, complete thermostat timer/restart behavior, and one
-harmless native template, scene and routine. Useful contributions include
-longer real-world testing and verification on additional supported hardware.
+This is working experimental software, not a finished appliance. The version
+running on the documented laboratory setup is not automatically the same as
+the newest source revision. A correction is considered physically confirmed
+only after that exact revision has been installed and run through the focused
+hardware check. Before broad deployment, the release candidate still needs
+checks for repeated warm/cold and color changes, binary and positionable
+covers, complete thermostat timer/restart behavior, and one harmless native
+template, scene and routine. Useful contributions include longer real-world
+testing and verification on additional supported hardware.
 Please
 report reproducible findings in [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues).
 

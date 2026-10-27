@@ -1,16 +1,35 @@
 # Changelog
 
+## Unreleased
+
+- Normalize physical color-temperature feedback such as 2702, 3003, 4716 or
+  6535 K onto the nine exact presets recognized by FRITZ!OS 8.25. Enforce the
+  same invariant again at the native MQTT boundary so stale retained data and
+  older clients cannot inject an unrecognized value.
+- Accept FRITZ!OS configuration URLs with fragments, including
+  `http://192.168.178.38/#/smart-home/devices`, while retaining validation of
+  credentials, query parameters, ports and control characters.
+- Accept finite floating-point cover positions from Home Assistant instead of
+  falling back to broad open/closed state, and add opt-in correlated debug logs
+  across the Provider, MQTT bridge and Home Assistant command path.
+- Correct the documentation: 32 devices is the current implementation limit,
+  not a demonstrated native maximum.
+
+These changes pass the automated source tests but have **not** yet been
+installed on the laboratory 7530 or physically confirmed with the 440. The
+running laboratory system still uses the earlier `fritz_virtual_bridge`/`FVB`
+generation. Do not treat this section as a release or rollout approval.
+
 ## 0.3.0-rc.1 - 2026-10-27
 
-- Complete the existing light profiles with reliable brightness and color-
-  temperature feedback plus Hue/Saturation round trips for compatible Home
-  Assistant color lights.
+- Add automated coverage for brightness, color-temperature and
+  Hue/Saturation round trips for compatible Home Assistant lights.
 - Make cover commands follow each source entity's actual open, close, stop and
   positioning capabilities, including truthful binary-cover feedback.
 - Complete thermostat feedback for current temperature, OFF and MAX, support
   Celsius and Fahrenheit sources, harden Boost/cold persistence and cancellation,
   and prevent deletion or rebinding from leaving a real thermostat at MAX/OFF.
-- Enforce the native 32-device capacity, retry the complete authoritative Home
+- Enforce the current implementation's 32-device capacity, retry the complete authoritative Home
   Assistant snapshot every minute and attempt native-device cleanup when their
   Home Assistant hub is removed, retaining recovery state if cleanup cannot
   reach MQTT or a source entity.
