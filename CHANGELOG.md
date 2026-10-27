@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0-rc.2 - 2026-10-27
+## 0.3.0-rc2 - 2026-10-27
 
 - Keep dynamic virtual color-temperature lights at an exact 2700 or 6500 K
   endpoint when FRITZ!OS requests its native endpoint wrap. The Provider

@@ -55,3 +55,30 @@ def test_home_assistant_freetz_and_changelog_versions_match() -> None:
     assert match is not None
     assert match.group(1) == version
     assert f"## {version} -" in (ROOT / "CHANGELOG.md").read_text()
+
+
+def test_package_version_is_stripped_by_freetz_modload() -> None:
+    """Keep prerelease syntax compatible with Freetz's package-name parser."""
+    makefile = PACKAGE_MAKEFILE.read_text()
+    match = re.search(r"^\$\(call PKG_INIT_BIN, ([^)]+)\)$", makefile, re.MULTILINE)
+    assert match is not None
+
+    package_directory = f"tentahacle-{match.group(1)}"
+    # Mirror tools/freetz_functions:real_pkg_name(). If the version is not
+    # stripped, /etc/static.pkg contains the versioned directory and modload
+    # cannot find /etc/default.tentahacle or rc.tentahacle at boot.
+    package_name = re.sub(
+        r"-(alpha|beta|rc|svn|(un)?stable|.)[0-9]*$",
+        "",
+        package_directory,
+        flags=re.IGNORECASE,
+    )
+    package_name = re.sub(
+        r"-[0-9a-f]{7}([0-9a-f]([0-9a-f]{2}([0-9a-f]{30})?)?)?$",
+        "",
+        package_name,
+    )
+    package_name = re.sub(r"-v?[0-9][^-]*$", "", package_name)
+    package_name = re.sub(r"-v?[0-9][^-]*$", "", package_name)
+
+    assert package_name == "tentahacle"
