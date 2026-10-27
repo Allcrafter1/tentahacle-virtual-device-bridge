@@ -24,6 +24,7 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <stdarg.h>
 
 #define TEXT_SIZE 256
 #define MAX_JSON_INTEGER 9007199254740991ULL
@@ -48,6 +49,7 @@ static tvb_device_registry registry;
 /* Protected by registry_lock, including Provider requests and delayed UNITs. */
 static int provider_ready;
 static int flash_dirty;
+static int debug_enabled;
 static double provider_generation=-1;
 static time_t unit_due;
 /* AHA restarts can leave a stored 440 widget absent from its physical display.
@@ -68,17 +70,44 @@ static char feedback_cache[TVB_REGISTRY_CAPACITY][FEEDBACK_COUNT][128];
 static const char *const feedback_operations[]={
     "SET","LEVEL","COLOR_TEMP","HS","POSITION","TARGET","ACTUAL","MODE","TIMER","SCHEDULE"
 };
+static void bridge_debug(const char *format,...){
+    if(!debug_enabled)return;
+    struct timespec now={0};long long milliseconds=-1;
+    if(!clock_gettime(CLOCK_MONOTONIC,&now))
+        milliseconds=(long long)now.tv_sec*1000+now.tv_nsec/1000000;
+    flockfile(stderr);
+    fprintf(stderr,"debug monotonic_ms=%lld mqtt_bridge: ",milliseconds);
+    va_list arguments;va_start(arguments,format);vfprintf(stderr,format,arguments);va_end(arguments);
+    funlockfile(stderr);
+}
+static void debug_feedback(const char *operation,const char *uid,const char *request,const char *status){
+    const char *value=strchr(request,' ');if(value)value=strchr(value+1,' ');
+    value=value?value+1:"";size_t length=strlen(value);
+    while(length&&(value[length-1]=='\n'||value[length-1]=='\r'))length--;
+    bridge_debug("feedback uid=%s property=%s value=%.*s provider=%s\n",
+        uid,operation,(int)length,value,status);
+}
+static int debug_requested(const char *value){
+    return value&&(!strcmp(value,"1")||!strcasecmp(value,"yes")||
+        !strcasecmp(value,"true"));
+}
 static int feedback_request(const char *request){
     char operation[24],uid[20];
     if(sscanf(request,"%23s %19s",operation,uid)!=2||strlen(request)>=128)return 0;
     const tvb_device *device=tvb_registry_find(&registry,uid);if(!device)return 0;
     for(size_t i=0;i<FEEDBACK_COUNT;i++)if(!strcmp(operation,feedback_operations[i])){
         size_t row=(size_t)(device-registry.devices);
-        if(i==FEEDBACK_COLOR_TEMP)feedback_cache[row][FEEDBACK_HS][0]=0;
-        else if(i==FEEDBACK_HS)feedback_cache[row][FEEDBACK_COLOR_TEMP][0]=0;
+        if(i==FEEDBACK_COLOR_TEMP){
+            feedback_cache[row][FEEDBACK_HS][0]=0;
+            bridge_debug("feedback uid=%s property=HS value=(cleared) provider=cache_only\n",uid);
+        }else if(i==FEEDBACK_HS){
+            feedback_cache[row][FEEDBACK_COLOR_TEMP][0]=0;
+            bridge_debug("feedback uid=%s property=COLOR_TEMP value=(cleared) provider=cache_only\n",uid);
+        }
         strcpy(feedback_cache[row][i],request);
-        if(!provider_ready)return 1;
-        if(provider_request(request))return 1;
+        if(!provider_ready){debug_feedback(operation,uid,request,"deferred");return 1;}
+        if(provider_request(request)){debug_feedback(operation,uid,request,"accepted");return 1;}
+        debug_feedback(operation,uid,request,"rejected");
         provider_ready=0;unit_due=0;return 0;
     }
     return 0;
@@ -539,6 +568,21 @@ static int parse_state(const void *payload,int length,int *state){
     return 0;
 }
 
+/* AHA 8.25 matches color-temperature feedback against these exact values.
+ * Keep this final MQTT boundary defensive as retained data may have been
+ * produced by an older integration.  The ascending order plus strict '<'
+ * comparison makes an exact midpoint select the warmer (lower-Kelvin) step,
+ * matching Home Assistant's protocol normalization. */
+static long normalize_color_temperature(long value){
+    static const long palette[]={2700,3000,3400,3800,4200,4700,5300,5900,6500};
+    long closest=palette[0],distance=labs(value-palette[0]);
+    for(size_t i=1;i<sizeof(palette)/sizeof(*palette);i++){
+        long candidate_distance=labs(value-palette[i]);
+        if(candidate_distance<distance){closest=palette[i];distance=candidate_distance;}
+    }
+    return closest;
+}
+
 static void device_message_locked(struct mosquitto *client,void *userdata,const struct mosquitto_message *message){
     (void)client;(void)userdata;
     size_t prefix_length=strlen(config.topic_prefix);
@@ -559,6 +603,8 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
     tvb_device_profile profile=device->profile;
     if(message->payloadlen==0&&(kind==2||kind==3)){
         feedback_cache[device-registry.devices][kind][0]=0;
+        bridge_debug("feedback uid=%s property=%s value=(cleared) provider=cache_only\n",
+            endpoint_id,feedback_operations[kind]);
         return;
     }
     if((kind==FEEDBACK_SET&&profile!=TVB_PROFILE_SWITCH&&profile!=TVB_PROFILE_DIMMABLE_LIGHT&&profile!=TVB_PROFILE_COLOR_TEMPERATURE_LIGHT)||
@@ -680,6 +726,12 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
         char *end=0;long value=strtol(value_text,&end,10);
         long minimum=kind==FEEDBACK_LEVEL?0:1000,maximum=kind==FEEDBACK_LEVEL?100:10000;
         if(end==value_text||*end||value<minimum||value>maximum){fprintf(stderr,"mqtt_bridge: ignored invalid numeric feedback\n");return;}
+        if(kind==FEEDBACK_COLOR_TEMP){
+            long normalized=normalize_color_temperature(value);
+            bridge_debug("feedback uid=%s property=COLOR_TEMP raw=%ld normalized=%ld\n",
+                endpoint_id,value,normalized);
+            value=normalized;
+        }
         char request[80];snprintf(request,sizeof(request),kind==FEEDBACK_LEVEL?"LEVEL %s %ld\n":"COLOR_TEMP %s %ld\n",endpoint_id,value);
         if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected numeric feedback %ld\n",value);
         return;
@@ -768,7 +820,14 @@ static void watch_provider(void){
             const tvb_device *device=uid?tvb_registry_find(&registry,uid):NULL;
             if(device&&device->enabled&&provider_ready){
                 char topic[TEXT_SIZE*2];snprintf(topic,sizeof(topic),"%s/device/%s/command",config.topic_prefix,device->uid);
-                mosquitto_publish(mqtt,NULL,topic,(int)length,message,1,false);
+                uint64_t sequence=0;int has_sequence=json_integer(
+                    cJSON_GetObjectItemCaseSensitive(event,"sequence"),&sequence);
+                int result=mosquitto_publish(mqtt,NULL,topic,(int)length,message,1,false);
+                if(has_sequence)bridge_debug(
+                    "command uid=%s sequence=%llu bytes=%zd mqtt_result=%d\n",
+                    device->uid,(unsigned long long)sequence,length,result);
+                else bridge_debug("command uid=%s sequence=invalid bytes=%zd mqtt_result=%d\n",
+                    device->uid,length,result);
             }
             pthread_mutex_unlock(&registry_lock);cJSON_Delete(event);
         }
@@ -791,6 +850,7 @@ static int create_registry_directory(void){
 }
 int main(int argc,char **argv){
     const char *path=argc>1?argv[1]:"/var/tmp/tentahacle-mqtt.conf";
+    debug_enabled=debug_requested(getenv("TENTAHACLE_DEBUG"));
     if(argc>2||!read_config(path)||!build_topics())return 2;
     char error[256];
     if(access(config.registry_file,F_OK)&&errno==ENOENT){

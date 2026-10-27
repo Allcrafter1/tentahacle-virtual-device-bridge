@@ -256,7 +256,9 @@ mappings are unnecessary. Reconfiguring a mapping can bind a replacement HA
 entity or change the FRITZ name without changing its FRITZ identity. A device
 type change creates a new mapping and requires a new 440 assignment.
 
-One bridge supports at most **32 virtual devices**. Home Assistant is the
+One bridge currently supports at most **32 virtual devices**. This is a
+conservative implementation limit, not a proven FRITZ!OS or `aha` limit.
+Home Assistant is the
 lifecycle authority: create, rename, rebind and delete devices there. Deleting
 a mapping removes its virtual device from the native AHA registry as well. The
 virtual parent reports itself as non-deletable in FRITZ!OS so that FRITZ!OS
@@ -429,6 +431,18 @@ The retained `bridge/info` document reports `ready`, the registry revision and
 supported profiles. `online` with `ready: false` means MQTT works but the local
 provider has not finished connecting or reprovisioning. A fingerprint error in
 the service log means the installed FRITZ!OS build is deliberately unsupported.
+
+For a command or state roundtrip problem, enable **Debug logging** in the
+TentAHAcle Freetz service, restart that service, reproduce exactly one action
+and save both log excerpts with their timestamps. The AHA log then records the
+decoded native command, endpoint UID, sequence and normalized value; the MQTT
+log records command forwarding with the same UID and sequence. State feedback
+does not carry that command sequence; correlate it through UID, value and the
+nearby monotonic timestamp instead.
+Enable debug logging for `custom_components.tentahacle` in Home Assistant as
+well when the problem crosses into an HA entity. Turn all debug logging off
+again after the capture. Never attach the generated MQTT configuration file or
+paste broker credentials into an issue.
 
 ## Rollback
 

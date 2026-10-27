@@ -175,7 +175,12 @@ start_bridge() {
 		return 0
 	fi
 	rm -f "$BRIDGE_PID"
-	LD_LIBRARY_PATH=/usr/lib/freetz "$BRIDGE" "$MQTT_CONFIG" >>"$MQTT_LOG" 2>&1 &
+	if [ "$TENTAHACLE_DEBUG" = yes ]; then
+		TENTAHACLE_DEBUG=1 LD_LIBRARY_PATH=/usr/lib/freetz \
+			"$BRIDGE" "$MQTT_CONFIG" >>"$MQTT_LOG" 2>&1 &
+	else
+		LD_LIBRARY_PATH=/usr/lib/freetz "$BRIDGE" "$MQTT_CONFIG" >>"$MQTT_LOG" 2>&1 &
+	fi
 	bridge_pid=$!
 	echo "$bridge_pid" >"$BRIDGE_PID"
 	sleep 1

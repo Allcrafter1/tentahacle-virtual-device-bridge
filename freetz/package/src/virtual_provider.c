@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <time.h>
 #include <math.h>
+#include <stdarg.h>
 #include "device_registry.h"
 #include "provider_state.h"
 #include "provider_events.h"
@@ -153,7 +154,21 @@ static unsigned profile_remote(tvb_device_profile p) {
     return ids[p];
 }
 
-#define DEBUG(...) do{if(debug_enabled)fprintf(stderr,__VA_ARGS__);}while(0)
+static void provider_debug(const char *format, ...) {
+    if (!debug_enabled) return;
+    struct timespec now = {0};
+    long long milliseconds = -1;
+    if (!clock_gettime(CLOCK_MONOTONIC, &now))
+        milliseconds = (long long) now.tv_sec * 1000 + now.tv_nsec / 1000000;
+    flockfile(stderr);
+    fprintf(stderr, "debug monotonic_ms=%lld ", milliseconds);
+    va_list arguments;
+    va_start(arguments, format);
+    vfprintf(stderr, format, arguments);
+    va_end(arguments);
+    funlockfile(stderr);
+}
+#define DEBUG(...) provider_debug(__VA_ARGS__)
 static const char *control_path = "/var/tmp/aha-virtual-provider.ctl";
 /* Lock held across write and shutdown: a truncated frame must never be
  * followed by another message on the same byte stream. AHA owns close(). */
@@ -461,6 +476,16 @@ static int dynamic_control(char *cmd, size_t capacity) {
 /* Caller holds lock. A full nonblocking pipe already contains a wakeup, so
  * EAGAIN is harmless; EINTR must be retried to avoid stranding the event. */
 static void publish_command_event(const struct command_event *event) {
+    const char *kind = event->has_thermostat_timer ? "thermostat_timer":
+        (event->has_thermostat ? "thermostat":
+        (event->has_cover ? "cover":
+        (event->has_color ? (event->color_mode == 2 ? "color_temperature":"hs"):
+        (event->has_level ? "level":"state"))));
+    DEBUG("provider: event uid=%s remote=%u sequence=%u kind=%s state=%u level=%u "
+          "color_mode=%u kelvin=%u hue=%u saturation=%u cover_action=%u\n",
+        event->endpoint, event->remote_id, event->sequence, kind, event->state,
+        event->level, event->color_mode, event->color_temperature, event->hue,
+        event->saturation, event->cover_action);
     provider_event_push(&event_queue, event);
     wake_worker();
 }
@@ -588,7 +613,8 @@ static ssize_t send_frame(int fd, const void*buf, size_t n, int flags) {
     if (enabled && n >= 24 && p[0] == 7 && p[1] == 3 && read_be16(p+2) == n &&
         read_be16(p+8) >= 450) {
         pthread_mutex_lock(&lock);
-        unsigned remote_id = read_be16(p+8), function = read_be32(p+16);
+        unsigned wire_remote_id = read_be16(p+8), remote_id = wire_remote_id;
+        unsigned function = read_be32(p+16);
         const tvb_device *dynamic = tvb_registry_find_remote(&registry, (uint16_t) remote_id);
         if (dynamic) {
             if (!dynamic->enabled && fd == incoming_fd) {
@@ -617,11 +643,15 @@ static ssize_t send_frame(int fd, const void*buf, size_t n, int flags) {
             return original_send(fd, buf, n, flags);
         }
 
-        DEBUG("provider: command remote=%u function=%u bytes=%zu\n", remote_id, function, n);
+        DEBUG("provider: wire uid=%s wire_remote=%u profile_remote=%u function=%u bytes=%zu\n",
+            selected_device ? selected_device->uid:endpoint_for(remote_id),
+            wire_remote_id, remote_id, function, n);
         if (debug_enabled && fd == incoming_fd && remote_id == 455) {
+            flockfile(stderr);
             fprintf(stderr, "provider: thermostat wire");
             for (size_t i = 16; i < n; i++) fprintf(stderr, " %02x", p[i]);
             fputc('\n', stderr);
+            funlockfile(stderr);
         }
         if (fd == incoming_fd && remote_id == 455 && function == 55 && n >= 32 &&
             read_be32(p+12) == n-16 && read_be16(p+20) == n-24) {
@@ -710,7 +740,6 @@ static ssize_t send_frame(int fd, const void*buf, size_t n, int flags) {
             }
             if (n == 36+inner_length && inner_function == 110 && inner_length == 8) {
                 unsigned value = p[36], level_type = read_be32(p+40);
-                DEBUG("provider: HANFUN level command value=%u type=%u\n", value, level_type);
                 if (remote_id == 454) {
                     if (level_type == 0) encoder.state->cover_level = (value*100+127)/255;
                     else if (level_type == 1) encoder.state->cover_level = value > 100 ? 100:value;
@@ -721,6 +750,11 @@ static ssize_t send_frame(int fd, const void*buf, size_t n, int flags) {
                     encoder.state->cover_openclose_state = 0;
                     command_count++;
                     last_command = encoder.state->cover_level;
+                    DEBUG("provider: decoded uid=%s remote=%u sequence=%u function=110 "
+                          "raw_level=%u level_type=%u native_level=%u ha_position=%u\n",
+                        selected_device ? selected_device->uid:endpoint_for(remote_id),
+                        wire_remote_id, command_count, value, level_type,
+                        encoder.state->cover_level, 100-encoder.state->cover_level);
                     queue_cover_event(0);
                     emit_cover_status(&encoder);
                     provider_unlock();
@@ -742,6 +776,10 @@ static ssize_t send_frame(int fd, const void*buf, size_t n, int flags) {
                 else if (level_type == 5)*level = value > *level ? 0:*level-value;
                 command_count++;
                 last_command = remote_id == 453 ? encoder.state->color_light_state:encoder.state->hanfun_light_state;
+                DEBUG("provider: decoded uid=%s remote=%u sequence=%u function=110 "
+                      "raw_level=%u level_type=%u normalized_level=%u\n",
+                    selected_device ? selected_device->uid:endpoint_for(remote_id),
+                    wire_remote_id, command_count, value, level_type, *level);
                 queue_command_event(remote_id, 1, 0, 0, 0);
                 if (remote_id == 453) emit_color_level(&encoder);
                 else emit_hanfun_level(&encoder);
@@ -767,6 +805,13 @@ static ssize_t send_frame(int fd, const void*buf, size_t n, int flags) {
                 }
                 command_count++;
                 last_command = encoder.state->color_light_state;
+                DEBUG("provider: decoded uid=%s remote=%u sequence=%u function=108 "
+                      "color_mode=%u kelvin=%u hue=%u saturation=%u mapped=%u\n",
+                    selected_device ? selected_device->uid:endpoint_for(remote_id),
+                    wire_remote_id, command_count, encoder.state->color_mode,
+                    encoder.state->color_temperature, encoder.state->color_hue,
+                    encoder.state->color_saturation,
+                    !encoder.state->color_is_unmapped);
                 queue_command_event(453, 0, 1, 0, 0);
                 emit_color_value(&encoder);
                 provider_unlock();
@@ -803,7 +848,6 @@ static ssize_t send_frame(int fd, const void*buf, size_t n, int flags) {
         if (fd == incoming_fd && remote_id == 451 && function == 110 && n == 32 &&
             read_be32(p+12) == 16 && read_be16(p+20) == 8) {
             unsigned value = p[24], level_type = read_be32(p+28);
-            DEBUG("provider: light level command value=%u type=%u\n", value, level_type);
             if (level_type > 5) {
                 provider_unlock();
                 return original_send(fd, buf, n, flags);
@@ -819,6 +863,11 @@ static ssize_t send_frame(int fd, const void*buf, size_t n, int flags) {
             else if (level_type == 5) encoder.state->light_level = value > encoder.state->light_level ? 0:encoder.state->light_level-value;
             command_count++;
             last_command = encoder.state->light_state;
+            DEBUG("provider: decoded uid=%s remote=%u sequence=%u function=110 "
+                  "raw_level=%u level_type=%u normalized_level=%u\n",
+                selected_device ? selected_device->uid:endpoint_for(remote_id),
+                wire_remote_id, command_count, value, level_type,
+                encoder.state->light_level);
             queue_command_event(451, 1, 0, 0, 0);
             /* Level commands are acknowledged by the surrounding network
              * transaction. Mirroring the function payload here feeds the
@@ -1297,6 +1346,11 @@ static void *worker(void*unused) {
                     DEBUG("provider: command event exceeds output buffer\n");
                     continue;
                 }
+                unsigned watcher_count = 0;
+                for (unsigned i = 0; i < 4; ++i)
+                    watcher_count += watchers[i] >= 0;
+                DEBUG("provider: deliver uid=%s remote=%u sequence=%u bytes=%d watchers=%u\n",
+                    ev.endpoint, ev.remote_id, ev.sequence, length, watcher_count);
                 for (unsigned i = 0; i < 4; i++) if (watchers[i] >= 0 &&
                     original_send(watchers[i], message, length, MSG_DONTWAIT|MSG_NOSIGNAL) != length) {
                     original_close(watchers[i]);

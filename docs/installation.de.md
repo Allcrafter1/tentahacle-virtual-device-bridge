@@ -298,7 +298,9 @@ Gerätetyps erzeugt dagegen ein neues virtuelles Gerät.
 Wenn ein Mapping in Home Assistant gelöscht wird, entfernt die Integration
 auch das zugehörige virtuelle Gerät aus FRITZ!OS und aus dem Bridge-Register.
 
-Eine Bridge unterstützt höchstens **32 virtuelle Geräte**. Home Assistant ist
+Eine Bridge unterstützt derzeit höchstens **32 virtuelle Geräte**. Das ist
+eine konservative Grenze der aktuellen Implementierung und keine bestätigte
+FRITZ!OS- oder `aha`-Grenze. Home Assistant ist
 für ihren Lebenszyklus zuständig: Anlegen, Umbenennen, Neubinden und Löschen
 erfolgen dort. Das virtuelle Elterngerät meldet sich in FRITZ!OS absichtlich als
 nicht löschbar, damit beide Seiten nicht auseinanderlaufen. Beim Entfernen des
@@ -447,6 +449,19 @@ Ein Fingerabdruckfehler bedeutet, dass der installierte FRITZ!OS-Stand bewusst
 nicht unterstützt wird. Zugangsdaten werden von Freetz in eine Laufzeitdatei
 mit Modus `0600` geschrieben und sollten nicht in Fehlerberichte kopiert
 werden.
+
+Aktiviere bei einem Befehls- oder Zustandsproblem im TentAHAcle-Dienst von
+Freetz das **Debug-Protokoll**, starte den Dienst neu, reproduziere genau eine
+Aktion und sichere aus beiden Logs den Ausschnitt mit Zeitstempeln. Das
+AHA-Log enthält dann den dekodierten nativen Befehl samt Endpoint-UID, Sequenz
+und normalisiertem Wert; das MQTT-Log zeigt die Befehlsweiterleitung mit
+derselben UID und Sequenz. Die Zustandsrückmeldung selbst enthält keine
+Befehlssequenz und wird stattdessen über UID, Wert und den nahen monotonen
+Zeitstempel zugeordnet. Wenn der Fehler bis zur
+HA-Entität reicht, aktiviere zusätzlich das Debug-Protokoll für
+`custom_components.tentahacle` in Home Assistant. Schalte die Debug-Protokolle
+nach der Aufnahme wieder aus. Hänge niemals die erzeugte MQTT-Konfiguration an
+ein Issue an und kopiere dort keine Broker-Zugangsdaten hinein.
 
 ## Rückkehr zum unveränderten Betrieb
 

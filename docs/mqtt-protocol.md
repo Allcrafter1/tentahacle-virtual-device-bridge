@@ -49,7 +49,8 @@ Supported profiles are `switch`, `dimmable_light`,
 UTF-8 bytes without leading whitespace. Optional `color_full` is valid only for
 `color_temperature_light`; it advertises Hue/Saturation in addition to Kelvin.
 Omitting it on an existing device preserves the stored capability. The registry
-holds at most 32 devices.
+currently holds at most 32 devices. This is a conservative implementation
+limit, not a proven FRITZ!OS or `aha` ceiling.
 
 Other operations are:
 
@@ -123,6 +124,11 @@ Home Assistant publishes retained QoS 1 scalar payloads below
 | `schedule/set` | `disabled` or `active <current-half-degrees> <next-half-degrees> <current-week-minute> <next-week-minute>` |
 
 The `/set` suffix means confirmed source state, not an unconfirmed command.
+For compatibility with older clients and retained MQTT data, the bridge accepts
+the documented Kelvin range but normalizes it at the Provider boundary to the
+nearest native AHA step: 2700, 3000, 3400, 3800, 4200, 4700, 5300, 5900 or
+6500 K. An exact midpoint selects the lower Kelvin value. Consequently, cached
+and replayed Provider feedback always contains a native palette value.
 The bridge caches the newest valid values while the provider is unavailable
 and replays them after device announcement and HAN-FUN unit provisioning.
 Home Assistant converts a Fahrenheit-configured source to these Celsius wire

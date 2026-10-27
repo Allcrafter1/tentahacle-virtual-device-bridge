@@ -8,6 +8,21 @@
 
 static char published_response[16384];
 static unsigned allocation_calls,allocation_failure,live_allocations;
+static void debug_logging(void){
+    assert(!debug_requested(NULL)&&!debug_requested("")&&!debug_requested("no"));
+    assert(debug_requested("1")&&debug_requested("yes")&&debug_requested("TRUE"));
+    FILE *capture=tmpfile();assert(capture);int saved=dup(STDERR_FILENO);assert(saved>=0);
+    fflush(stderr);assert(dup2(fileno(capture),STDERR_FILENO)==STDERR_FILENO);
+    debug_enabled=0;bridge_debug("hidden-marker\n");
+    debug_enabled=1;debug_feedback("LEVEL","TVB0123456789ABCDEF",
+        "LEVEL TVB0123456789ABCDEF 55\n","accepted");
+    fflush(stderr);assert(dup2(saved,STDERR_FILENO)==STDERR_FILENO);close(saved);
+    rewind(capture);char output[512]={0};size_t length=fread(output,1,sizeof(output)-1,capture);
+    assert(length>0&&!strstr(output,"hidden-marker"));
+    assert(strstr(output,"uid=TVB0123456789ABCDEF")&&strstr(output,"property=LEVEL")&&
+        strstr(output,"value=55")&&strstr(output,"provider=accepted"));
+    fclose(capture);debug_enabled=0;
+}
 static void *failing_malloc(size_t size){
     if(++allocation_calls==allocation_failure)return NULL;
     void *memory=malloc(size);if(memory)++live_allocations;return memory;
@@ -32,6 +47,32 @@ static void feedback(const char *uid,const char *kind,const char *value){
     char topic[512];snprintf(topic,sizeof(topic),"%s/device/%s/%s/set",config.topic_prefix,uid,kind);
     struct mosquitto_message message={.topic=topic,.payload=(void*)value,.payloadlen=(int)strlen(value)};
     device_message_locked(NULL,NULL,&message);
+}
+static long cached_numeric_feedback(size_t row,enum feedback_kind kind){
+    char operation[24],uid[20];long value=0;
+    assert(sscanf(feedback_cache[row][kind],"%23s %19s %ld",operation,uid,&value)==3);
+    return value;
+}
+static void color_temperature_palette_feedback(void){
+    static const struct {const char *input;long expected;} cases[]={
+        {"2702",2700},{"3003",3000},{"4716",4700},{"6535",6500},
+        {"2850",2700},{"3200",3000},{"1000",2700},{"10000",6500}
+    };
+    tvb_registry_init(&registry);provider_ready=0;
+    memset(feedback_cache,0,sizeof(feedback_cache));
+    assert(tvb_registry_add(&registry,registry.revision,"TVB0123456789ABCDEF",
+        "Kelvin",TVB_PROFILE_COLOR_TEMPERATURE_LIGHT,NULL)==TVB_REGISTRY_OK);
+    for(size_t i=0;i<sizeof(cases)/sizeof(*cases);i++){
+        feedback(registry.devices[0].uid,"color_temperature",cases[i].input);
+        assert(cached_numeric_feedback(0,FEEDBACK_COLOR_TEMP)==cases[i].expected);
+    }
+    feedback(registry.devices[0].uid,"color_temperature","bad");
+    assert(cached_numeric_feedback(0,FEEDBACK_COLOR_TEMP)==6500);
+    feedback(registry.devices[0].uid,"color_temperature","999");
+    assert(cached_numeric_feedback(0,FEEDBACK_COLOR_TEMP)==6500);
+    feedback(registry.devices[0].uid,"color_temperature","10001");
+    assert(cached_numeric_feedback(0,FEEDBACK_COLOR_TEMP)==6500);
+    memset(feedback_cache,0,sizeof(feedback_cache));
 }
 /* Local fake Provider validates identity checks and delayed provisioning;
  * it never opens a network socket or contacts an AVM daemon. */
@@ -133,6 +174,8 @@ static void profile_matrix_and_cache(void){
     memset(feedback_cache,0,sizeof(feedback_cache));
 }
 int main(void){
+    debug_logging();
+    color_temperature_palette_feedback();
     profile_matrix_and_cache();
     pid_t timed_child=fork();assert(timed_child>=0);
     if(!timed_child){for(;;)pause();}
