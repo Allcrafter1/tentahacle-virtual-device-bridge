@@ -5,7 +5,7 @@
 - Distinguish a responsive virtual provider whose native AHA transport is
   temporarily disconnected from an unresponsive provider control channel.
   Native DECT maintenance such as a FRITZ!Smart Control firmware update now
-  gets a one-minute reconnect grace period instead of forcing an AHA restart
+  gets a twenty-minute reconnect grace period instead of forcing an AHA restart
   after 15 seconds. A genuinely unresponsive control channel still recovers
   after three failed checks, and a persistent transport outage still recovers
   after the bounded grace period.

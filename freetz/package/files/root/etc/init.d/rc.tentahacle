@@ -172,10 +172,12 @@ watchdog_cycle() {
 		control_failures=0
 		disconnect_failures=$((disconnect_failures + 1))
 		# Device firmware updates and native DECT maintenance can recycle the
-		# AHA transport without breaking the provider. Give that path one minute
-		# to reconnect; a permanently disconnected dedicated bridge still heals.
-		[ "$disconnect_failures" -ge 12 ] || return
-		echo "$(date): provider control is responsive but AHA transport stayed disconnected for one minute; restarting aha" >&2
+		# AHA transport without breaking the provider. A battery-device firmware
+		# transfer can legitimately take many minutes, so allow twenty minutes
+		# for the native reconnect. A permanently disconnected dedicated bridge
+		# still heals after that bounded maintenance window.
+		[ "$disconnect_failures" -ge 240 ] || return
+		echo "$(date): provider control is responsive but AHA transport stayed disconnected for twenty minutes; restarting aha" >&2
 	else
 		disconnect_failures=0
 		control_failures=$((control_failures + 1))

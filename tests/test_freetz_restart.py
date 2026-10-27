@@ -271,7 +271,7 @@ log_aha_threads() { echo unexpected-snapshot; }
 recover_virtual_aha() { echo unexpected-recovery; return 0; }
 date() { echo now; }
 i=0
-while [ "$i" -lt 11 ]; do watchdog_cycle; i=$((i + 1)); done
+while [ "$i" -lt 239 ]; do watchdog_cycle; i=$((i + 1)); done
 echo failures:$control_failures/$disconnect_failures
 """
     )
@@ -279,7 +279,7 @@ echo failures:$control_failures/$disconnect_failures
         ["/bin/sh", "-s"], input=script, text=True, capture_output=True, check=False
     )
     assert result.returncode == 0
-    assert result.stdout.splitlines() == ["failures:0/11"]
+    assert result.stdout.splitlines() == ["failures:0/239"]
 
 
 def test_watchdog_recovers_persistent_responsive_transport_disconnect() -> None:
@@ -287,7 +287,7 @@ def test_watchdog_recovers_persistent_responsive_transport_disconnect() -> None:
         shell_function("watchdog_cycle")
         + """
 control_failures=0
-disconnect_failures=10
+disconnect_failures=238
 provider_health_state() { return 1; }
 log_aha_threads() { echo thread-snapshot; }
 recover_virtual_aha() { echo provider-recover; return 0; }
