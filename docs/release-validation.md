@@ -9,17 +9,18 @@ open-ended feature backlog.
 
 | Layer | Observed status |
 |---|---|
-| Running 7530 | TentAHAcle `0.3.0-rc4` built from `431eadb` is installed on boot slot 0; exact root-filesystem hashes match the audited image; service, provider and MQTT bridge are running |
-| Running Home Assistant | Matching `0.3.0-rc4` component is loaded with the unchanged hub and two subentries; the old `fritz_virtual_bridge` entry remains disabled; `Morgenlicht` and `Testrollladen` are the two canaries |
-| Exact artifact | `TentAHAcle-0.3.0-rc4-7530-08.25.image`, SHA-256 `90e87a18090e8391a9b714894c53d63852667de62e735805c9fa917472585333` |
-| Live smoke evidence | Cold boot, package registration, delayed asynchronous service/provider startup, broker authentication, persistent registry, clean explicit service restart, MQTT-process watchdog restart, virtual-`aha` watchdog recovery and an HA restart passed. The two UIDs/remote IDs and registry SHA remained unchanged; native resync found all three saved widget placements |
-| Automated evidence | Exact head: 296 Python tests passed and one optional Lua 5.1 test skipped. Ruff, JSON/shell/packaging checks, strict native tests, ASan/UBSan, deterministic fuzz/fault tests, independent capacity review and the ARM GCC 13.4/Freetz build passed. LeakSanitizer/ThreadSanitizer are not claimed for this exact head |
-| Physical evidence for this exact source | Passed on the directly paired 440: saved widget placement survived reboot/recovery, brightness up/down worked, both native Kelvin endpoint transitions completed and the cover opened/closed correctly |
+| Running 7530 | TentAHAcle `0.3.0-rc5` built from `c186462` is installed on boot slot 1; all selected root-filesystem hashes match the audited image; service, provider and MQTT bridge are running |
+| Running Home Assistant | Matching `0.3.0-rc5` component is loaded with the unchanged hub and all five device subentries |
+| Exact artifact | `TentAHAcle-0.3.0-rc5-7530-08.25.image`, SHA-256 `97f9771ad1efeab3f83216022c332dca3eca0dcc882faae1f77007dfe73a40f8` |
+| Live smoke evidence | Alternate-slot boot, delayed asynchronous provider startup, broker authentication, HA restart and the unchanged five-device registry passed. Registry SHA `8aa20784eb83901ed6aa35efb3a16b8a5cc5e6d532918f5d1a70cecc78fda331` and remote IDs 456–460 survived; the 6690 reports all five virtual parents and units present |
+| Automated evidence | Exact built commit: 297 Python tests passed and one optional Lua 5.1 test skipped. Ruff, shell/JSON/packaging checks, strict native integration tests, focused ASan/UBSan backpressure regression and the ARM GCC 13.4/Freetz build passed. The broader RC4 sanitizer/fuzz/fault evidence covers unchanged paths; LeakSanitizer/ThreadSanitizer are not claimed for this exact head |
+| Physical evidence for this exact source | Pending one post-install first-press round trip on the directly paired 440; the broader brightness, Kelvin, cover and saved-placement canary passed on RC4 before the isolated transport change |
 
-The focused canary is hardware-confirmed for this exact installed revision.
-Rows and source-entity variants not exercised by that canary remain at their
-explicit automated or pending qualification level below. The archived
-`0.3.0-rc.1` image predates the current fixes.
+RC5 is installed and the software/Mesh path is confirmed; its one physical
+post-install round trip remains an explicit gate rather than being inferred
+from RC4. Rows and source-entity variants not exercised by the earlier canary
+remain at their explicit automated or pending qualification level below. The
+archived `0.3.0-rc.1` image predates the current fixes.
 
 ## Automated gate
 
@@ -116,10 +117,10 @@ remaining six 440s.
 
 ## Release decision
 
-The candidate has been flashed to the laboratory 7530; its runtime, bounded
-recovery paths and focused physical canary with one directly paired 440 passed.
-It is approved for a controlled rollout to the seven available controllers and
-for publication as a release candidate. This is not a claim that every optional
-profile/source-entity combination in the matrix has physical qualification.
-Cosmetic limitations above are acceptable when documented; new speculative
-enhancements are not release blockers.
+The candidate has been flashed to the laboratory 7530. Its exact runtime files,
+registry identity, automatic startup, Home Assistant load and 6690 Mesh presence
+passed. Publication and the controlled rollout to the remaining controllers are
+held only for the focused post-install 440 round trip; this is not a request for
+another broad audit. Profiles and source-entity combinations outside the canary
+retain their stated qualification level, and the documented cosmetic
+limitations are not release blockers.

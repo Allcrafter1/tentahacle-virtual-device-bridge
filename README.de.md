@@ -154,15 +154,16 @@ Bekannte Grenzen des aktuellen Kandidaten:
 ### Projektstand und Mitmachen
 
 Das Projekt ist funktionierende experimentelle Software und noch kein fertiges
-Produkt. Der exakte Kandidat `0.3.0-rc4` aus Commit `431eadb` ist auf der
+Produkt. Das exakte aus Commit `c186462` gebaute Image `0.3.0-rc5` ist auf der
 beschriebenen Labor-7530 zusammen mit der passenden Home-Assistant-Komponente
-installiert. Kaltstart, expliziter Dienstneustart, Wiederherstellung von MQTT-
-Prozess und virtuellem `aha`, Registry-Persistenz sowie ein HA-Neustart haben
-Live-Tests bestanden. Der gezielte Test dieser exakten Version mit einem direkt
-angemeldeten 440 hat außerdem die erhaltenen Zuweisungen, Helligkeit, beide
-Kelvin-Endpunktübergänge und den Rollladenpfad bestätigt. Damit ist der Kandidat
-für den kontrollierten Rollout auf die sieben vorhandenen 440 freigegeben.
-Besonders hilfreich bleiben längere Praxistests und Prüfungen auf zusätzlicher
+installiert. Die fünf Geräteidentitäten und Controller-Zuweisungen aus RC4 sind
+erhalten, der alternative Boot-Slot startet sauber und die 6690 meldet alle
+virtuellen Geräte wieder als anwesend. RC5 verhindert zusätzlich den einmal im
+RC4-Praxistest beobachteten Provider-Lock-Hänger und protokolliert bei einer
+erneuten Recovery begrenzte Thread-Diagnosen. Die breiteren RC4-Funktions- und
+Recovery-Tests gelten für die unveränderten Pfade weiter; der gezielte physische
+RC5-Test wird separat in der Release-Checkliste dokumentiert. Besonders
+hilfreich bleiben längere Praxistests und Prüfungen auf zusätzlicher
 unterstützter Hardware.
 Nachvollziehbare Ergebnisse bitte über
 [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues) melden.

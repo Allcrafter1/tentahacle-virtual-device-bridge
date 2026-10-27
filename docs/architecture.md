@@ -578,15 +578,17 @@ failure modes that matter on a dedicated long-running bridge:
   review.
 
 This is the code-complete candidate, not a claim that undocumented FRITZ radio
-and UI behavior can be proven offline. Commit `431eadb` (`0.3.0-rc4`) and its
-matching Home Assistant component are installed on the laboratory 7530. Exact
-root-filesystem hashes, cold boot, service restart, MQTT-process recovery,
-virtual-`aha` recovery, persistent registry identity and an HA restart passed
-live checks. Physical 440 confirmation remains separate and is tracked in
-the [release validation checklist](release-validation.md).
+and UI behavior can be proven offline. The `0.3.0-rc5` image built from commit
+`c186462` and its matching Home Assistant component are installed on the
+laboratory 7530. Exact root-filesystem hashes, alternate-slot boot, persistent
+five-device registry identity, automatic provider/MQTT startup, 6690 Mesh
+presence and an HA restart passed focused live checks. Physical 440 confirmation
+remains separate and is tracked in the
+[release validation checklist](release-validation.md).
 
-For this release-candidate snapshot, 296 repository tests pass; the optional
-Lua 5.1 resync test skips on the current host. Ruff, shell/JSON validation, the
-complete native ASan/UBSan/fuzz/fault suite and the ARM/Freetz 7530 image build
-also pass. LeakSanitizer and ThreadSanitizer are not claimed for this exact
-head.
+For this release-candidate snapshot, 297 repository tests pass; the optional
+Lua 5.1 resync test skips on the current host. Ruff, shell/JSON validation,
+strict native integration tests, the focused ASan/UBSan backpressure regression
+and the ARM/Freetz 7530 image build pass. The broader native sanitizer/fuzz/fault
+evidence remains inherited from the immediately preceding RC4 source; full
+LeakSanitizer and ThreadSanitizer are not claimed for this exact head.

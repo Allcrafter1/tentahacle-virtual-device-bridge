@@ -136,15 +136,16 @@ Known boundaries of the current candidate:
 ### Project status and contributions
 
 This is working experimental software, not a finished appliance. The exact
-`0.3.0-rc4` candidate from commit `431eadb` is installed on the documented
-laboratory 7530 together with the matching Home Assistant component. Cold boot,
-explicit service restart, MQTT-process recovery, virtual-`aha` recovery,
-registry persistence and an HA restart passed live checks. The focused test of
-this exact revision with a directly paired 440 also confirmed retained screen
-assignments, brightness, both Kelvin endpoint transitions and the cover path.
-The candidate is therefore approved for the controlled rollout to the seven
-available 440 controllers. Useful contributions still include longer real-world
-testing and verification on additional supported hardware.
+`0.3.0-rc5` image built from commit `c186462` is installed on the documented
+laboratory 7530 together with the matching Home Assistant component. It keeps
+the five-device registry and controller assignments from RC4 and starts cleanly
+on the alternate boot slot; the 6690 Mesh master reports every virtual device
+present again. RC5 additionally prevents the provider lock starvation observed
+once during the RC4 canary and records bounded thread diagnostics if recovery is
+ever needed again. Broader RC4 function/recovery tests remain valid for the
+unchanged paths; RC5's focused physical canary is tracked separately in the
+release checklist. Useful contributions still include longer real-world testing
+and verification on additional supported hardware.
 Please
 report reproducible findings in [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues).
 
