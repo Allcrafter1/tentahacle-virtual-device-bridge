@@ -31,6 +31,32 @@ def test_light_command_maps_level_to_brightness_percentage() -> None:
     ) == ("light", "turn_on", {"entity_id": "light.desk", "brightness_pct": 42})
 
 
+@pytest.mark.parametrize(
+    "entity_id", ["switch.socket", "input_boolean.scene", "light.basic"]
+)
+@pytest.mark.parametrize(("value", "service"), [(1, "turn_on"), (0, "turn_off")])
+def test_switch_profile_calls_source_domain(
+    entity_id: str, value: int, service: str
+) -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","state":{value},"sequence":7}}'
+    )
+    assert service_call_for_command(DeviceProfile.SWITCH, entity_id, parsed) == (
+        entity_id.partition(".")[0],
+        service,
+        {"entity_id": entity_id},
+    )
+
+
+@pytest.mark.parametrize(("state", "expected"), [("on", "ON"), ("off", "OFF")])
+def test_switch_profile_reports_confirmed_external_state(
+    state: str, expected: str
+) -> None:
+    assert feedback_for_state(DeviceProfile.SWITCH, state, {}) == {
+        "state": expected
+    }
+
+
 def test_color_temperature_uses_current_kelvin_action() -> None:
     parsed = command(
         '{"event":"command","endpoint":"TVB0123456789ABCDEF",'
