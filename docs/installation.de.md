@@ -15,7 +15,7 @@ Nutzung weder SSH noch Terminalbefehle oder manuelle Konfigurationsdateien
 erforderlich.
 
 > [!IMPORTANT]
-> Version 0.3.0-rc4 aktualisiert 0.2.0-beta.1, 0.3.0-rc.1, 0.3.0-rc2 oder 0.3.0-rc3 direkt: Aktualisiere die
+> Version 0.3.0-rc5 aktualisiert 0.2.0-beta.1, 0.3.0-rc.1, 0.3.0-rc2, 0.3.0-rc3 oder 0.3.0-rc4 direkt: Aktualisiere die
 > Home-Assistant-Integration und das Freetz-Paket gemeinsam; vorhandene
 > virtuelle Identitäten und Controller-Zuweisungen bleiben erhalten. Nur beim
 > direkten Wechsel von einem früheren 0.1.x-Teststand ist eine Neuinstallation

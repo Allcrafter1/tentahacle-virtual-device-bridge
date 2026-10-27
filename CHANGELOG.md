@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.0-rc5 - 2026-10-27
+
+- Prevent provider-generated Smart Home frames from blocking indefinitely
+  behind a full native stream while holding the provider's state and control
+  lock. Stock AHA traffic remains unchanged; only bridge-injected frames use
+  bounded nonblocking delivery.
+- Preserve intact catalog connections across transient backpressure and retry
+  after the normal worker interval. A stream that already received a partial
+  frame is still retired rather than risking protocol corruption.
+- Record a bounded AHA thread/wait-channel snapshot before watchdog recovery,
+  so a future control-channel outage can be diagnosed without delaying the
+  automatic restart.
+- Add a deterministic full-stream regression that reproduces the former lock
+  starvation and proves that the control lock remains available.
+
+This candidate addresses the first spontaneous provider outage observed during
+the RC4 canary: the 7530 endpoint was absent from the Mesh master for 31 seconds
+while Home Assistant and MQTT remained connected. Installation and physical
+controller confirmation are tracked separately in `docs/release-validation.md`.
+
 ## 0.3.0-rc4 - 2026-10-27
 
 - Raise the coordinated Home Assistant and native bridge capacity from 32 to
