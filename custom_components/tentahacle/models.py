@@ -95,25 +95,34 @@ def validate_bridge_id(value: str) -> str:
 
 def validate_fritz_url(value: str) -> str:
     """Validate and normalize the local FRITZ!Box configuration URL."""
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("invalid FRITZ!Box URL")
     value = value.strip()
     parsed = urlsplit(value)
+    try:
+        _ = parsed.port
+    except ValueError as err:
+        raise ValueError("invalid FRITZ!Box URL") from err
     if (
         parsed.scheme not in {"http", "https"}
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
         or parsed.query
-        or parsed.fragment
     ):
         raise ValueError("invalid FRITZ!Box URL")
-    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+    path = parsed.path.rstrip("/")
+    if parsed.fragment:
+        path = f"{path}/"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", parsed.fragment))
 
 
 def fritz_smart_home_url(value: str) -> str:
     """Build the supported FRITZ!OS Smart Home deep link from a safe base URL."""
     parsed = urlsplit(validate_fritz_url(value))
     path = f"{parsed.path.rstrip('/')}/"
-    return urlunsplit((parsed.scheme, parsed.netloc, path, "lp=sh_dev", ""))
+    fragment = parsed.fragment or "/smart-home/devices"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", fragment))
 
 
 def endpoint_uid_from_token(token: str) -> str:

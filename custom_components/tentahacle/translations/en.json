@@ -34,7 +34,7 @@
     },
     "error": {
       "invalid_bridge_id": "Use 3–32 lowercase letters, numbers, underscores or hyphens.",
-      "invalid_fritz_url": "Enter an HTTP or HTTPS URL without credentials, query parameters or fragments.",
+      "invalid_fritz_url": "Enter an HTTP or HTTPS URL without credentials or query parameters.",
       "invalid_topic_root": "Enter an MQTT prefix without spaces, empty segments or +/# (at most 255 UTF-8 bytes including the bridge ID)."
     },
     "abort": {
@@ -91,7 +91,7 @@
         "source_entity_missing": "The selected Home Assistant entity no longer exists.",
         "incompatible_cover": "The selected cover cannot implement both FRITZ open and close controls.",
         "incompatible_thermostat": "The selected thermostat cannot implement the thermostat controls required by this bridge.",
-        "device_limit_reached": "This bridge already has the maximum of 32 virtual devices."
+        "device_limit_reached": "This bridge has reached the current limit of 32 virtual devices."
       }
     }
   },

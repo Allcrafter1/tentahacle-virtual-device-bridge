@@ -156,6 +156,10 @@ def test_validation_rejects_topic_injection_and_long_names() -> None:
     [
         ("http://fritz.box/", "http://fritz.box"),
         (" https://192.168.178.1/ui/ ", "https://192.168.178.1/ui"),
+        (
+            "http://192.168.178.38/#/smart-home/devices",
+            "http://192.168.178.38/#/smart-home/devices",
+        ),
     ],
 )
 def test_fritz_url_validation(value: str, expected: str) -> None:
@@ -165,10 +169,18 @@ def test_fritz_url_validation(value: str, expected: str) -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        ("http://fritz.box", "http://fritz.box/?lp=sh_dev"),
+        ("http://fritz.box", "http://fritz.box/#/smart-home/devices"),
         (
             "https://192.168.178.38:8443/proxy/",
-            "https://192.168.178.38:8443/proxy/?lp=sh_dev",
+            "https://192.168.178.38:8443/proxy/#/smart-home/devices",
+        ),
+        (
+            "http://192.168.178.38/#/smart-home/devices",
+            "http://192.168.178.38/#/smart-home/devices",
+        ),
+        (
+            "http://fritz.box/#/custom/place",
+            "http://fritz.box/#/custom/place",
         ),
     ],
 )
@@ -277,7 +289,11 @@ def test_incompatible_climate_entities_are_rejected(
         "ftp://fritz.box",
         "http://user:secret@fritz.box",
         "http://fritz.box/?sid=secret",
-        "http://fritz.box/#smart-home",
+        "http://fritz.box:invalid/#/smart-home/devices",
+        "http://fritz.box:65536/#/smart-home/devices",
+        "http://fri\ntz.box/#/smart-home/devices",
+        "http://fritz.box/pa\tth#/smart-home/devices",
+        "http://fritz.box/#/smart-home/devices\x7f",
     ],
 )
 def test_fritz_url_rejects_unsafe_or_ambiguous_values(value: str) -> None:

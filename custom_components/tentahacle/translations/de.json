@@ -34,7 +34,7 @@
     },
     "error": {
       "invalid_bridge_id": "Verwende 3–32 Kleinbuchstaben, Zahlen, Unterstriche oder Bindestriche.",
-      "invalid_fritz_url": "Gib eine HTTP- oder HTTPS-Adresse ohne Zugangsdaten, Abfrageparameter oder Fragment an.",
+      "invalid_fritz_url": "Gib eine HTTP- oder HTTPS-Adresse ohne Zugangsdaten oder Abfrageparameter an.",
       "invalid_topic_root": "MQTT-Präfix ohne Leerzeichen, leere Segmente oder +/# eingeben (mit Bridge-ID höchstens 255 UTF-8-Bytes)."
     },
     "abort": {
@@ -91,7 +91,7 @@
         "source_entity_missing": "Die ausgewählte Home-Assistant-Entität existiert nicht mehr.",
         "incompatible_cover": "Der ausgewählte Rollladen kann die FRITZ-Befehle Öffnen und Schließen nicht beide umsetzen.",
         "incompatible_thermostat": "Das ausgewählte Thermostat kann die von dieser Bridge benötigten Thermostatbefehle nicht umsetzen.",
-        "device_limit_reached": "Diese Bridge besitzt bereits die maximal möglichen 32 virtuellen Geräte."
+        "device_limit_reached": "Diese Bridge hat die aktuelle Grenze von 32 virtuellen Geräten erreicht."
       }
     }
   },

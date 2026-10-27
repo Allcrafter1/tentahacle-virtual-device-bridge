@@ -20,7 +20,9 @@ from custom_components.tentahacle.const import (
 from custom_components.tentahacle.protocol import (
     ClimateCapabilities,
     CoverCapabilities,
+    LightCapabilities,
     ProtocolError,
+    feedback_for_state,
     parse_command,
     service_call_for_command,
 )
@@ -45,6 +47,7 @@ def bridge_methods() -> dict:
         "_async_publish_schedule",
         "_async_publish_authoritative_timer",
         "_async_publish_prune",
+        "_async_publish_feedback",
         "_async_command_message",
         "_async_load_overrides",
         "_async_cancel_override_if_source_changed",
@@ -81,6 +84,7 @@ def bridge_methods() -> dict:
         "ProtocolError": ProtocolError,
         "ClimateCapabilities": ClimateCapabilities,
         "CoverCapabilities": CoverCapabilities,
+        "LightCapabilities": LightCapabilities,
         "CoverEntityFeature": SimpleNamespace(
             OPEN=1,
             CLOSE=2,
@@ -89,6 +93,14 @@ def bridge_methods() -> dict:
         ),
         "parse_command": parse_command,
         "service_call_for_command": service_call_for_command,
+        "feedback_for_state": feedback_for_state,
+        "_diagnostic_values": lambda values: values,
+        "_light_capabilities": lambda attributes: LightCapabilities(
+            frozenset(attributes.get("supported_color_modes", [])),
+            attributes.get("min_color_temp_kelvin"),
+            attributes.get("max_color_temp_kelvin"),
+        ),
+        "monotonic": Mock(side_effect=[1.0, 1.125]),
         "CONF_SOURCE_ENTITY_ID": CONF_SOURCE_ENTITY_ID,
         "CONF_PROFILE": CONF_PROFILE,
         "DeviceProfile": DeviceProfile,
@@ -261,6 +273,124 @@ def test_thermostat_command_uses_home_assistant_unit_when_entity_omits_it() -> N
         {"entity_id": "climate.room", "temperature": 68.0, "hvac_mode": "heat"},
         blocking=True,
     )
+
+
+def test_light_command_uses_source_kelvin_range_and_logs_sequence() -> None:
+    methods = bridge_methods()
+    mapping = {
+        CONF_PROFILE: DeviceProfile.COLOR_TEMPERATURE_LIGHT.value,
+        CONF_SOURCE_ENTITY_ID: "light.room",
+    }
+    bridge = SimpleNamespace(
+        _mappings={"uid": mapping},
+        hass=SimpleNamespace(
+            states=SimpleNamespace(
+                get=lambda _: SimpleNamespace(
+                    state="on",
+                    attributes={
+                        "supported_color_modes": ["color_temp"],
+                        "min_color_temp_kelvin": 2000,
+                        "max_color_temp_kelvin": 5000,
+                    },
+                )
+            ),
+            services=SimpleNamespace(async_call=AsyncMock()),
+        ),
+        _mapping_color_full=Mock(return_value=False),
+        _async_handle_timer=AsyncMock(),
+    )
+    message = SimpleNamespace(
+        topic="tentahacle/lab/device/uid/command",
+        payload=(
+            '{"event":"command","endpoint":"uid","sequence":17,'
+            '"state":1,"color_temperature":6500}'
+        ),
+    )
+    asyncio.run(methods["_async_command_message"](bridge, message))
+    bridge.hass.services.async_call.assert_awaited_once_with(
+        "light",
+        "turn_on",
+        {"entity_id": "light.room", "color_temp_kelvin": 5000},
+        blocking=True,
+    )
+    debug_calls = methods["_LOGGER"].debug.call_args_list
+    assert debug_calls[0].args[1:4] == ("uid", 17, "light.room")
+    assert debug_calls[1].args[1:3] == ("uid", 17)
+    assert debug_calls[1].args[3] == 125.0
+
+
+def test_command_service_failure_logs_sequence_and_elapsed_then_raises() -> None:
+    methods = bridge_methods()
+    service_call = AsyncMock(side_effect=RuntimeError("source failed"))
+    mapping = {
+        CONF_PROFILE: DeviceProfile.SWITCH.value,
+        CONF_SOURCE_ENTITY_ID: "switch.room",
+    }
+    bridge = SimpleNamespace(
+        _mappings={"uid": mapping},
+        hass=SimpleNamespace(
+            states=SimpleNamespace(get=lambda _: None),
+            services=SimpleNamespace(async_call=service_call),
+        ),
+        _mapping_color_full=Mock(return_value=False),
+        _async_handle_timer=AsyncMock(),
+    )
+    message = SimpleNamespace(
+        topic="tentahacle/lab/device/uid/command",
+        payload=(
+            '{"event":"command","endpoint":"uid","sequence":23,'
+            '"state":1}'
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="source failed"):
+        asyncio.run(methods["_async_command_message"](bridge, message))
+
+    service_call.assert_awaited_once_with(
+        "switch", "turn_on", {"entity_id": "switch.room"}, blocking=True
+    )
+    exception_call = methods["_LOGGER"].exception.call_args
+    assert exception_call.args[1:3] == ("uid", 23)
+    assert exception_call.args[3] == 125.0
+
+
+def test_light_feedback_logs_and_publishes_native_palette_value() -> None:
+    methods = bridge_methods()
+    methods["mqtt"].async_publish.reset_mock()
+    mapping = {
+        CONF_PROFILE: DeviceProfile.COLOR_TEMPERATURE_LIGHT.value,
+        CONF_SOURCE_ENTITY_ID: "light.room",
+    }
+    bridge = SimpleNamespace(
+        hass=object(),
+        topic_prefix="tentahacle/lab",
+        _mapping_color_full=Mock(return_value=False),
+    )
+    asyncio.run(
+        methods["_async_publish_feedback"](
+            bridge,
+            "uid",
+            mapping,
+            "on",
+            {
+                "supported_color_modes": ["color_temp"],
+                "min_color_temp_kelvin": 2000,
+                "max_color_temp_kelvin": 6535,
+                "color_mode": "color_temp",
+                "color_temp_kelvin": 3003,
+            },
+        )
+    )
+    published = {
+        call.args[1].rsplit("/", 2)[-2]: call.args[2]
+        for call in methods["mqtt"].async_publish.await_args_list
+    }
+    assert published == {
+        "state": "ON",
+        "hs": "",
+        "color_temperature": "3000",
+    }
+    assert "properties=%s" in methods["_LOGGER"].debug.call_args.args[0]
 
 
 def test_sync_prunes_before_upsert_and_reasserts_authority() -> None:

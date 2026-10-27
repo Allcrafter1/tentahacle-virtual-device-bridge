@@ -7,6 +7,7 @@ from custom_components.tentahacle.const import DeviceProfile
 from custom_components.tentahacle.protocol import (
     ClimateCapabilities,
     CoverCapabilities,
+    LightCapabilities,
     ProtocolError,
     feedback_for_state,
     parse_command,
@@ -72,6 +73,57 @@ def test_color_temperature_uses_current_kelvin_action() -> None:
 
 
 @pytest.mark.parametrize(
+    ("requested", "minimum", "maximum", "expected"),
+    [
+        (2700, 3000, 6500, 3000),
+        (4200, 2000, 6535, 4200),
+        (6500, 2000, 5000, 5000),
+    ],
+)
+def test_color_temperature_respects_source_kelvin_range(
+    requested: int, minimum: float, maximum: float, expected: int
+) -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","state":1,'
+        f'"color_temperature":{requested},"sequence":7}}'
+    )
+    assert service_call_for_command(
+        DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+        "light.desk",
+        parsed,
+        entity_capabilities=LightCapabilities(
+            frozenset({"color_temp"}), minimum, maximum
+        ),
+    ) == (
+        "light",
+        "turn_on",
+        {"entity_id": "light.desk", "color_temp_kelvin": expected},
+    )
+
+
+@pytest.mark.parametrize(
+    ("minimum", "maximum"),
+    [(4000, 3000), (float("inf"), 900), (10001, None)],
+)
+def test_color_temperature_rejects_empty_source_kelvin_range(
+    minimum: float | None, maximum: float | None
+) -> None:
+    parsed = command(
+        f'{{"event":"command","endpoint":"{UID}","state":1,'
+        '"color_temperature":4200,"sequence":7}'
+    )
+    with pytest.raises(ProtocolError, match="range"):
+        service_call_for_command(
+            DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+            "light.desk",
+            parsed,
+            entity_capabilities=LightCapabilities(
+                frozenset({"color_temp"}), minimum, maximum
+            ),
+        )
+
+
+@pytest.mark.parametrize(
     ("profile", "value", "expected"),
     [
         (
@@ -118,8 +170,44 @@ def test_color_temperature_feedback_uses_confirmed_value() -> None:
         "state": "ON",
         "level": "50",
         "hs": None,
-        "color_temperature": "3003",
+        "color_temperature": "3000",
     }
+
+
+@pytest.mark.parametrize(
+    ("confirmed", "expected"),
+    [(3003, "3000"), (6535, "6500"), (2232, "2700"), (3200, "3000")],
+)
+def test_color_temperature_feedback_uses_native_440_palette(
+    confirmed: float, expected: str
+) -> None:
+    assert feedback_for_state(
+        DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+        "on",
+        {"color_temp_kelvin": confirmed},
+    )["color_temperature"] == expected
+
+
+def test_color_temperature_feedback_respects_source_range() -> None:
+    assert feedback_for_state(
+        DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+        "on",
+        {"color_temp_kelvin": 3003},
+        light_capabilities=LightCapabilities(
+            frozenset({"color_temp"}), 3200, 4500
+        ),
+    )["color_temperature"] == "3400"
+
+
+def test_color_temperature_feedback_omits_value_when_source_misses_palette() -> None:
+    assert feedback_for_state(
+        DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+        "on",
+        {"color_temp_kelvin": 2400},
+        light_capabilities=LightCapabilities(
+            frozenset({"color_temp"}), 2000, 2500
+        ),
+    ) == {"state": "ON", "hs": None}
 
 
 def test_full_color_command_maps_fritz_hs_to_home_assistant_scale() -> None:
@@ -172,6 +260,40 @@ def test_full_color_temperature_feedback_clears_stale_hs() -> None:
         "state": "ON",
         "hs": None,
         "color_temperature": "4200",
+    }
+
+
+def test_missing_color_mode_uses_kelvin_only_for_ct_only_source() -> None:
+    assert feedback_for_state(
+        DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+        "on",
+        {
+            "color_temp_kelvin": 3000,
+            "hs_color": (20, 40),
+        },
+        color_full=True,
+        light_capabilities=LightCapabilities(frozenset({"color_temp"})),
+    ) == {
+        "state": "ON",
+        "hs": None,
+        "color_temperature": "3000",
+    }
+
+
+def test_missing_color_mode_uses_hs_for_rgb_only_source() -> None:
+    assert feedback_for_state(
+        DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+        "on",
+        {
+            "color_temp_kelvin": 3000,
+            "hs_color": (20, 40),
+        },
+        color_full=True,
+        light_capabilities=LightCapabilities(frozenset({"rgb"})),
+    ) == {
+        "state": "ON",
+        "color_temperature": None,
+        "hs": "20 102",
     }
 
 
@@ -306,12 +428,28 @@ def test_position_only_cover_maps_actions_to_end_positions(
         ("closing", {}, {}),
         ("opening", {"current_position": 34}, {"position": "34"}),
         ("closing", {"current_position": 66}, {"position": "66"}),
+        ("open", {"current_position": 0.0}, {"position": "0"}),
+        ("open", {"current_position": 50.0}, {"position": "50"}),
+        ("closed", {"current_position": 100.0}, {"position": "100"}),
+        ("opening", {"current_position": 49.49}, {"position": "49"}),
+        ("opening", {"current_position": 49.5}, {"position": "50"}),
     ],
 )
 def test_cover_feedback_handles_binary_and_position_covers(
     state: str, attributes: dict[str, object], expected: dict[str, str]
 ) -> None:
     assert feedback_for_state(DeviceProfile.COVER, state, attributes) == expected
+
+
+@pytest.mark.parametrize(
+    "position", [True, False, float("nan"), float("inf"), float("-inf"), -0.1, 100.1]
+)
+def test_cover_feedback_rejects_invalid_numeric_positions(position: object) -> None:
+    assert feedback_for_state(
+        DeviceProfile.COVER,
+        "opening",
+        {"current_position": position},
+    ) == {}
 
 
 def test_state_feedback_rounds_climate_to_half_degrees() -> None:

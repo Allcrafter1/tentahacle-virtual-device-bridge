@@ -10,6 +10,7 @@ import uuid
 from asyncio import Lock
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from time import monotonic
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components import mqtt
@@ -44,6 +45,7 @@ from .models import full_color_supported
 from .protocol import (
     ClimateCapabilities,
     CoverCapabilities,
+    LightCapabilities,
     ProtocolError,
     feedback_for_state,
     parse_command,
@@ -318,8 +320,19 @@ class TentAHAcleBridge:
             ):
                 await self._async_handle_timer(uid, mapping, command.values)
                 return
-            entity_capabilities: CoverCapabilities | ClimateCapabilities | None = None
-            if profile is DeviceProfile.COVER:
+            entity_capabilities: (
+                LightCapabilities | CoverCapabilities | ClimateCapabilities | None
+            ) = None
+            if profile in {
+                DeviceProfile.DIMMABLE_LIGHT,
+                DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+            }:
+                source_state = self.hass.states.get(mapping[CONF_SOURCE_ENTITY_ID])
+                attributes = (
+                    source_state.attributes if source_state is not None else {}
+                )
+                entity_capabilities = _light_capabilities(attributes)
+            elif profile is DeviceProfile.COVER:
                 source_state = self.hass.states.get(mapping[CONF_SOURCE_ENTITY_ID])
                 if source_state is not None:
                     features = source_state.attributes.get("supported_features")
@@ -369,7 +382,35 @@ class TentAHAcleBridge:
         except ProtocolError as err:
             _LOGGER.warning("Ignoring invalid command for %s: %s", uid, err)
             return
-        await self.hass.services.async_call(domain, service, data, blocking=True)
+        _LOGGER.debug(
+            "Command uid=%s sequence=%s entity=%s values=%s -> %s.%s data=%s",
+            uid,
+            command.sequence,
+            mapping[CONF_SOURCE_ENTITY_ID],
+            _diagnostic_values(command.values),
+            domain,
+            service,
+            _diagnostic_values(data),
+        )
+        started = monotonic()
+        try:
+            await self.hass.services.async_call(
+                domain, service, data, blocking=True
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Command uid=%s sequence=%s service failed after %.1f ms",
+                uid,
+                command.sequence,
+                (monotonic() - started) * 1000,
+            )
+            raise
+        _LOGGER.debug(
+            "Command uid=%s sequence=%s service completed in %.1f ms",
+            uid,
+            command.sequence,
+            (monotonic() - started) * 1000,
+        )
 
     async def _async_load_overrides(self) -> None:
         """Load and validate restart-safe thermostat override state."""
@@ -695,11 +736,19 @@ class TentAHAcleBridge:
         state: str,
         attributes: dict[str, Any],
     ) -> None:
+        profile = DeviceProfile(mapping[CONF_PROFILE])
+        light_capabilities = None
+        if profile in {
+            DeviceProfile.DIMMABLE_LIGHT,
+            DeviceProfile.COLOR_TEMPERATURE_LIGHT,
+        }:
+            light_capabilities = _light_capabilities(attributes)
         feedback = feedback_for_state(
-            DeviceProfile(mapping[CONF_PROFILE]),
+            profile,
             state,
             attributes,
             color_full=self._mapping_color_full(mapping),
+            light_capabilities=light_capabilities,
             temperature_unit=(
                 (
                     attributes.get("temperature_unit")
@@ -709,6 +758,14 @@ class TentAHAcleBridge:
                 if DeviceProfile(mapping[CONF_PROFILE]) is DeviceProfile.THERMOSTAT
                 else "°C"
             ),
+        )
+        _LOGGER.debug(
+            "State feedback uid=%s entity=%s state=%s attributes=%s properties=%s",
+            uid,
+            mapping[CONF_SOURCE_ENTITY_ID],
+            state,
+            _diagnostic_values(attributes),
+            feedback,
         )
         for property_name, value in feedback.items():
             await mqtt.async_publish(
@@ -729,3 +786,56 @@ class TentAHAcleBridge:
         return state is not None and full_color_supported(
             state.attributes.get("supported_color_modes", [])
         )
+
+
+def _diagnostic_values(values: dict[str, Any]) -> dict[str, Any]:
+    """Return only protocol and light-state fields safe for debug logs."""
+    allowed = (
+        "brightness",
+        "brightness_pct",
+        "color_mode",
+        "color_temp_kelvin",
+        "color_temperature",
+        "current_position",
+        "entity_id",
+        "hs_color",
+        "hue",
+        "level",
+        "max_color_temp_kelvin",
+        "min_color_temp_kelvin",
+        "position",
+        "saturation",
+        "state",
+        "supported_color_modes",
+    )
+    return {key: values[key] for key in allowed if key in values}
+
+
+def _light_capabilities(attributes: dict[str, Any]) -> LightCapabilities:
+    """Read only well-formed light limits and modes from an HA state."""
+    modes = attributes.get("supported_color_modes")
+    supported_modes = (
+        frozenset(str(mode) for mode in modes)
+        if isinstance(modes, (list, tuple, set, frozenset))
+        else frozenset()
+    )
+    return LightCapabilities(
+        supported_color_modes=supported_modes,
+        min_color_temperature=_finite_number(
+            attributes.get("min_color_temp_kelvin")
+        ),
+        max_color_temperature=_finite_number(
+            attributes.get("max_color_temp_kelvin")
+        ),
+    )
+
+
+def _finite_number(value: object) -> float | None:
+    """Normalize one HA numeric attribute without accepting booleans."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    try:
+        normalized = float(value)
+    except (OverflowError, ValueError):
+        return None
+    return normalized if math.isfinite(normalized) else None

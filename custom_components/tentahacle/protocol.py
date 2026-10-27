@@ -10,6 +10,8 @@ from typing import Any
 
 from .const import DeviceProfile
 
+_FRITZ_COLOR_TEMPERATURES = (2700, 3000, 3400, 3800, 4200, 4700, 5300, 5900, 6500)
+
 
 class ProtocolError(ValueError):
     """An MQTT message violates the bridge protocol."""
@@ -32,6 +34,15 @@ class CoverCapabilities:
     close: bool = True
     stop: bool = True
     set_position: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class LightCapabilities:
+    """Home Assistant colour modes and Kelvin limits for one light."""
+
+    supported_color_modes: frozenset[str] = frozenset()
+    min_color_temperature: float | None = None
+    max_color_temperature: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +83,9 @@ def service_call_for_command(
     entity_id: str,
     command: BridgeCommand,
     *,
-    entity_capabilities: CoverCapabilities | ClimateCapabilities | None = None,
+    entity_capabilities: (
+        LightCapabilities | CoverCapabilities | ClimateCapabilities | None
+    ) = None,
     color_full: bool = False,
 ) -> tuple[str, str, dict[str, Any]]:
     """Translate a provider command to one Home Assistant service call."""
@@ -87,7 +100,18 @@ def service_call_for_command(
         DeviceProfile.DIMMABLE_LIGHT,
         DeviceProfile.COLOR_TEMPERATURE_LIGHT,
     }:
-        return _light_service_call(profile, entity_id, values, color_full=color_full)
+        light_capabilities = (
+            entity_capabilities
+            if isinstance(entity_capabilities, LightCapabilities)
+            else LightCapabilities()
+        )
+        return _light_service_call(
+            profile,
+            entity_id,
+            values,
+            capabilities=light_capabilities,
+            color_full=color_full,
+        )
 
     if profile is DeviceProfile.COVER:
         cover_capabilities = (
@@ -170,6 +194,7 @@ def _light_service_call(
     entity_id: str,
     values: dict[str, Any],
     *,
+    capabilities: LightCapabilities,
     color_full: bool,
 ) -> tuple[str, str, dict[str, Any]]:
     """Translate a validated FRITZ light command."""
@@ -186,8 +211,9 @@ def _light_service_call(
     if "color_temperature" in values:
         if profile is not DeviceProfile.COLOR_TEMPERATURE_LIGHT:
             raise ProtocolError("color temperature is not enabled")
-        data["color_temp_kelvin"] = _integer(
-            values, "color_temperature", 1000, 10000
+        requested = _integer(values, "color_temperature", 1000, 10000)
+        data["color_temp_kelvin"] = _kelvin_for_capabilities(
+            requested, capabilities
         )
     if has_hs:
         if profile is not DeviceProfile.COLOR_TEMPERATURE_LIGHT or not color_full:
@@ -242,12 +268,13 @@ def _cover_service_call(
     raise ProtocolError("cover does not support intermediate positions")
 
 
-def feedback_for_state(
+def feedback_for_state(  # noqa: PLR0913
     profile: DeviceProfile,
     state: str,
     attributes: dict[str, Any],
     *,
     color_full: bool = False,
+    light_capabilities: LightCapabilities | None = None,
     temperature_unit: str = "°C",
 ) -> dict[str, str | None]:
     """Translate one HA state into retained provider feedback properties."""
@@ -272,23 +299,52 @@ def feedback_for_state(
             and 0 <= brightness <= 255
         ):
             result["level"] = str(round(brightness * 100 / 255))
+        capabilities = light_capabilities or LightCapabilities()
         color_mode = attributes.get("color_mode")
-        color_temperature = attributes.get("color_temp_kelvin")
+        color_temperature = _finite_float(attributes.get("color_temp_kelvin"))
+        supported_color_modes = capabilities.supported_color_modes
+        chromatic_modes = {"hs", "xy", "rgb", "rgbw", "rgbww"}
+        use_temperature = (
+            not color_full
+            or color_mode == "color_temp"
+            or (
+                color_full
+                and color_mode in {None, ""}
+                and "color_temp" in supported_color_modes
+                and not supported_color_modes & chromatic_modes
+            )
+        )
+        use_hs = color_full and (
+            color_mode in chromatic_modes
+            or (
+                color_mode in {None, ""}
+                and bool(supported_color_modes & chromatic_modes)
+                and "color_temp" not in supported_color_modes
+            )
+        )
         if profile is DeviceProfile.COLOR_TEMPERATURE_LIGHT and not color_full:
             # Also removes a retained HS value after rebinding/downgrading an
             # existing full-colour mapping.
             result["hs"] = None
         if (
             profile is DeviceProfile.COLOR_TEMPERATURE_LIGHT
-            and (not color_full or color_mode == "color_temp")
-            and isinstance(color_temperature, (int, float))
-            and not isinstance(color_temperature, bool)
+            and use_temperature
+            and color_temperature is not None
             and 1000 <= color_temperature <= 10000
         ):
             if color_full:
                 result["hs"] = None
-            result["color_temperature"] = str(round(color_temperature))
-        if color_full and color_mode in {"hs", "xy", "rgb", "rgbw", "rgbww"}:
+            # The native 440 widget steps through a fixed discrete Kelvin
+            # palette.  Several HA integrations confirm nearby physical values
+            # (for example 3003 K or 6535 K); feeding those values back makes
+            # the next native step repeat or wrap.  Report the closest palette
+            # entry that the source says it can represent.
+            normalized_temperature = _feedback_kelvin_for_capabilities(
+                color_temperature, capabilities
+            )
+            if normalized_temperature is not None:
+                result["color_temperature"] = str(normalized_temperature)
+        if use_hs:
             hs_color = attributes.get("hs_color")
             if (
                 isinstance(hs_color, (list, tuple))
@@ -308,13 +364,14 @@ def feedback_for_state(
         return result
 
     if profile is DeviceProfile.COVER:
-        position = attributes.get("current_position")
-        if (
-            isinstance(position, int)
-            and not isinstance(position, bool)
-            and 0 <= position <= 100
-        ):
-            return {"position": str(position)}
+        position = _finite_float(attributes.get("current_position"))
+        if position is not None and 0 <= position <= 100:
+            # Template and several device integrations expose percentages as
+            # floats even though the FRITZ level is an integer.  Keep the
+            # source's confirmed position instead of falling back to its broad
+            # open/closed state (which would turn every non-zero position into
+            # 100 percent).
+            return {"position": str(int(position + 0.5))}
         # Binary covers do not expose current_position. Only publish confirmed
         # end states; opening/closing must not be mistaken for an arrived end
         # position.
@@ -350,6 +407,44 @@ def _integer(values: dict[str, Any], key: str, minimum: int, maximum: int) -> in
     ):
         raise ProtocolError(f"invalid {key}")
     return value
+
+
+def _kelvin_for_capabilities(
+    requested: int, capabilities: LightCapabilities
+) -> int:
+    """Clamp a FRITZ palette value to finite limits advertised by HA."""
+    minimum = _finite_float(capabilities.min_color_temperature)
+    maximum = _finite_float(capabilities.max_color_temperature)
+    if minimum is not None and maximum is not None and minimum > maximum:
+        raise ProtocolError("invalid light color-temperature range")
+    lower = math.ceil(minimum) if minimum is not None else 1000
+    upper = math.floor(maximum) if maximum is not None else 10000
+    lower = max(1000, lower)
+    upper = min(10000, upper)
+    if lower > upper:
+        raise ProtocolError("invalid light color-temperature range")
+    return min(max(requested, lower), upper)
+
+
+def _feedback_kelvin_for_capabilities(
+    confirmed: float, capabilities: LightCapabilities
+) -> int | None:
+    """Map a confirmed HA value onto the 440's discrete Kelvin palette."""
+    minimum = _finite_float(capabilities.min_color_temperature)
+    maximum = _finite_float(capabilities.max_color_temperature)
+    if minimum is not None and maximum is not None and minimum > maximum:
+        return None
+    choices = tuple(
+        value
+        for value in _FRITZ_COLOR_TEMPERATURES
+        if (minimum is None or value >= minimum)
+        and (maximum is None or value <= maximum)
+    )
+    if not choices:
+        return None
+    # The palette value itself is the secondary key, so an exact midpoint
+    # deterministically selects the warmer (lower-Kelvin) entry.
+    return min(choices, key=lambda value: (abs(value - confirmed), value))
 
 
 def _thermostat_feedback(
