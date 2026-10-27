@@ -14,13 +14,13 @@ open-ended feature backlog.
 | Exact artifact | `TentAHAcle-0.3.0-rc5-7530-08.25.image`, SHA-256 `97f9771ad1efeab3f83216022c332dca3eca0dcc882faae1f77007dfe73a40f8` |
 | Live smoke evidence | Alternate-slot boot, delayed asynchronous provider startup, broker authentication, HA restart and the unchanged five-device registry passed. Registry SHA `8aa20784eb83901ed6aa35efb3a16b8a5cc5e6d532918f5d1a70cecc78fda331` and remote IDs 456–460 survived; the 6690 reports all five virtual parents and units present |
 | Automated evidence | Exact built commit: 297 Python tests passed and one optional Lua 5.1 test skipped. Ruff, shell/JSON/packaging checks, strict native integration tests, focused ASan/UBSan backpressure regression and the ARM GCC 13.4/Freetz build passed. The broader RC4 sanitizer/fuzz/fault evidence covers unchanged paths; LeakSanitizer/ThreadSanitizer are not claimed for this exact head |
-| Physical evidence for this exact source | Pending one post-install first-press round trip on the directly paired 440; the broader brightness, Kelvin, cover and saved-placement canary passed on RC4 before the isolated transport change |
+| Physical evidence for this exact source | Passed: `Morgenlicht` reacted on the first press of the directly paired 440 after the RC5 flash and HA restart. The broader brightness, Kelvin, cover and saved-placement canary passed on RC4 before the isolated transport change |
 
-RC5 is installed and the software/Mesh path is confirmed; its one physical
-post-install round trip remains an explicit gate rather than being inferred
-from RC4. Rows and source-entity variants not exercised by the earlier canary
-remain at their explicit automated or pending qualification level below. The
-archived `0.3.0-rc.1` image predates the current fixes.
+RC5 is installed and its software/Mesh path plus the focused physical
+post-install round trip are confirmed. Rows and source-entity variants not
+exercised by the earlier broader canary remain at their explicit automated or
+pending qualification level below. The archived `0.3.0-rc.1` image predates
+the current fixes.
 
 ## Automated gate
 
@@ -118,9 +118,9 @@ remaining six 440s.
 ## Release decision
 
 The candidate has been flashed to the laboratory 7530. Its exact runtime files,
-registry identity, automatic startup, Home Assistant load and 6690 Mesh presence
-passed. Publication and the controlled rollout to the remaining controllers are
-held only for the focused post-install 440 round trip; this is not a request for
-another broad audit. Profiles and source-entity combinations outside the canary
-retain their stated qualification level, and the documented cosmetic
-limitations are not release blockers.
+registry identity, automatic startup, Home Assistant load, 6690 Mesh presence
+and focused first-press round trip on a directly paired 440 passed. It is
+approved for publication as a release candidate and for a controlled rollout
+to the remaining controllers. Profiles and source-entity combinations outside
+the canary retain their stated qualification level, and the documented
+cosmetic limitations are not release blockers.

@@ -161,10 +161,11 @@ erhalten, der alternative Boot-Slot startet sauber und die 6690 meldet alle
 virtuellen Geräte wieder als anwesend. RC5 verhindert zusätzlich den einmal im
 RC4-Praxistest beobachteten Provider-Lock-Hänger und protokolliert bei einer
 erneuten Recovery begrenzte Thread-Diagnosen. Die breiteren RC4-Funktions- und
-Recovery-Tests gelten für die unveränderten Pfade weiter; der gezielte physische
-RC5-Test wird separat in der Release-Checkliste dokumentiert. Besonders
-hilfreich bleiben längere Praxistests und Prüfungen auf zusätzlicher
-unterstützter Hardware.
+Recovery-Tests gelten für die unveränderten Pfade weiter; auch der gezielte
+Ersttasten-Roundtrip von RC5 mit einem direkt angemeldeten 440 hat bestanden.
+Die genauen Nachweise stehen in der Release-Checkliste. Besonders hilfreich
+bleiben längere Praxistests und Prüfungen auf zusätzlicher unterstützter
+Hardware.
 Nachvollziehbare Ergebnisse bitte über
 [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues) melden.
 

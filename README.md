@@ -143,9 +143,10 @@ on the alternate boot slot; the 6690 Mesh master reports every virtual device
 present again. RC5 additionally prevents the provider lock starvation observed
 once during the RC4 canary and records bounded thread diagnostics if recovery is
 ever needed again. Broader RC4 function/recovery tests remain valid for the
-unchanged paths; RC5's focused physical canary is tracked separately in the
-release checklist. Useful contributions still include longer real-world testing
-and verification on additional supported hardware.
+unchanged paths; RC5's focused first-press round trip on a directly paired 440
+also passed. The exact evidence is tracked in the release checklist. Useful
+contributions still include longer real-world testing and verification on
+additional supported hardware.
 Please
 report reproducible findings in [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues).
 

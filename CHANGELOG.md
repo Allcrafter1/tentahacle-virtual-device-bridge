@@ -18,7 +18,8 @@
 This candidate addresses the first spontaneous provider outage observed during
 the RC4 canary: the 7530 endpoint was absent from the Mesh master for 31 seconds
 while Home Assistant and MQTT remained connected. Installation and physical
-controller confirmation are tracked separately in `docs/release-validation.md`.
+controller confirmation are tracked separately in `docs/release-validation.md`;
+the installed RC5 candidate passed its focused first-press 440 round trip.
 
 ## 0.3.0-rc4 - 2026-10-27
 
