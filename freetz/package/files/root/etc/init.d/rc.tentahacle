@@ -112,6 +112,27 @@ watchdog_is_running() {
 		grep -q 'watchdog' "/proc/$watchdog_pid/cmdline"
 }
 
+# Capture a small, bounded process snapshot before a recovery restart. This is
+# read-only and lets a later incident distinguish provider-lock contention from
+# a different native AHA wait without delaying recovery materially.
+log_aha_threads() {
+	thread_count=0
+	for aha_pid in $(pidof aha 2>/dev/null); do
+		case "$aha_pid" in
+			*[!0-9]*|"") continue ;;
+		esac
+		for task_dir in "/proc/$aha_pid"/task/[0-9]*; do
+			[ -d "$task_dir" ] || continue
+			thread_id="${task_dir##*/}"
+			thread_name="$(cat "$task_dir/comm" 2>/dev/null)"
+			wait_channel="$(cat "$task_dir/wchan" 2>/dev/null)"
+			echo "$(date): aha thread pid=$aha_pid tid=$thread_id comm=$thread_name wchan=$wait_channel" >&2
+			thread_count=$((thread_count + 1))
+			[ "$thread_count" -lt 64 ] || return 0
+		done
+	done
+}
+
 cap_log() {
 	log_file="$1"
 	[ -f "$log_file" ] || return 0
@@ -141,6 +162,7 @@ watchdog_cycle() {
 	failures=$((failures + 1))
 	[ "$failures" -ge 3 ] || return
 	echo "$(date): provider health check failed three times; restarting aha" >&2
+	log_aha_threads || :
 	if recover_virtual_aha; then
 		echo "$(date): virtual provider recovered" >&2
 		bridge_is_running || start_bridge ||

@@ -170,11 +170,20 @@ static void provider_debug(const char *format, ...) {
 }
 #define DEBUG(...) provider_debug(__VA_ARGS__)
 static const char *control_path = "/var/tmp/aha-virtual-provider.ctl";
-/* Lock held across write and shutdown: a truncated frame must never be
- * followed by another message on the same byte stream. AHA owns close(). */
+/* Provider-injected traffic must never wait behind native stream backpressure
+ * while holding the global state/control lock. The intercepted stock-AHA
+ * write path remains unchanged; only our own complete frames use this bounded
+ * nonblocking send. */
+static ssize_t send_injected_frame(int fd, const void *data, size_t size) {
+    return original_send(fd, data, size, MSG_DONTWAIT | MSG_NOSIGNAL);
+}
+/* Lock held across the bounded send attempts and shutdown: a truncated frame
+ * must never be followed by another message on the same byte stream. AHA owns
+ * close(). EAGAIN before any byte leaves the stream intact for a later retry. */
 static ssize_t write_provider_frame(int fd, const void *data, size_t size) {
     size_t progress = 0;
-    ssize_t result = provider_write_frame_progress(fd, data, size, original_write, &progress);
+    ssize_t result = provider_write_frame_progress(fd, data, size,
+        send_injected_frame, &progress);
     if (result < 0 && progress) {
         int saved = errno;
         (void)shutdown(fd, SHUT_RDWR);
@@ -1320,12 +1329,27 @@ static void *worker(void*unused) {
             struct provider_catalog_ticket ticket;
             catalog_event = 0;
             if (provider_catalog_take(&catalog_sync, &ticket) == 1) {
-                int ok = write_provider_frame(ticket.fd, ticket.frame, sizeof(ticket.frame))
-                    == (ssize_t)sizeof(ticket.frame);
+                errno = 0;
+                ssize_t sent = write_provider_frame(ticket.fd, ticket.frame,
+                    sizeof(ticket.frame));
+                int saved_errno = errno;
+                int ok = sent == (ssize_t)sizeof(ticket.frame);
                 (void)provider_catalog_finish(&catalog_sync, &ticket, ok);
-                if (!ok) provider_catalog_forget_fd(&catalog_sync, ticket.fd);
-                fprintf(stderr, "tvb-catalog-sync: correlated unit metadata, native catalog request %s\n",
-                    ok ? "sent" : "failed; waiting for a new client connection");
+                if (!ok && sent < 0 &&
+                    (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK)) {
+                    /* No-progress backpressure leaves the captured stream
+                     * usable. Retry after the ordinary one-second worker
+                     * poll instead of spinning or waiting for a reconnect.
+                     * A partial write already retired the stream, so the
+                     * single scheduled retry simply finds no valid client. */
+                    catalog_event = 1;
+                    fprintf(stderr, "tvb-catalog-sync: correlated unit metadata, native catalog request deferred by backpressure\n");
+                }
+                else {
+                    if (!ok) provider_catalog_forget_fd(&catalog_sync, ticket.fd);
+                    fprintf(stderr, "tvb-catalog-sync: correlated unit metadata, native catalog request %s\n",
+                        ok ? "sent" : "failed; waiting for a new client connection");
+                }
             }
         }
         provider_unlock();

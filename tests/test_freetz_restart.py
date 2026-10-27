@@ -186,6 +186,7 @@ def test_watchdog_recovers_provider_then_ensures_bridge_is_running() -> None:
         + """
 failures=0
 provider_is_healthy() { return 1; }
+log_aha_threads() { echo thread-snapshot; }
 recover_virtual_aha() { echo provider-recover; return 0; }
 bridge_is_running() { return 1; }
 start_bridge() { echo bridge-start; }
@@ -201,10 +202,34 @@ echo failures:$failures
     )
     assert result.returncode == 0
     assert result.stdout.splitlines() == [
+        "thread-snapshot",
         "provider-recover",
         "bridge-start",
         "failures:0",
     ]
+
+
+def test_watchdog_logs_threads_only_after_third_provider_failure() -> None:
+    script = (
+        shell_function("watchdog_cycle")
+        + """
+failures=0
+provider_is_healthy() { return 1; }
+log_aha_threads() { echo thread-snapshot; }
+recover_virtual_aha() { return 0; }
+bridge_is_running() { return 0; }
+date() { echo now; }
+watchdog_cycle
+watchdog_cycle
+echo before-third
+watchdog_cycle
+"""
+    )
+    result = subprocess.run(
+        ["/bin/sh", "-s"], input=script, text=True, capture_output=True, check=False
+    )
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == ["before-third", "thread-snapshot"]
 
 
 def test_initial_provider_failure_still_starts_recovery_watchdog() -> None:

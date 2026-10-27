@@ -3,11 +3,13 @@
  * No AHA daemon, preload environment, or network connection is needed. */
 #include "../freetz/package/src/virtual_provider.c"
 #include <assert.h>
+#include <sys/wait.h>
 static unsigned forwarded, writes;
 static ssize_t forward(int fd,const void *p,size_t n,int flags) {
     (void)fd;(void)p;(void)flags;++forwarded;return (ssize_t)n;
 }
-static ssize_t partial_then_again(int fd,const void *p,size_t n) {
+static ssize_t partial_then_again(int fd,const void *p,size_t n,int flags) {
+    assert(flags==(MSG_DONTWAIT|MSG_NOSIGNAL));
     if (!writes++) { assert(n>=2);return syscall(SYS_write,fd,p,2); }
     errno=EAGAIN;return -1;
 }
@@ -68,8 +70,7 @@ int main(void) {
     encoder.fd=pair[0];incoming_fd=pair[1];announced=7;
     unsigned char request[12]={5,3,0,12,0,0,0,7};
     assert(provider_catalog_capture(&catalog_sync,pair[0],pair[1],request,12));
-    ssize_t (*saved_write)(int,const void *,size_t)=original_write;
-    original_write=partial_then_again;
+    original_send=partial_then_again;
     pthread_mutex_lock(&lock);
     writes=1; /* EAGAIN before any bytes is safely retryable. */
     assert(write_provider_frame(pair[0],request,12)==-1&&errno==EAGAIN);
@@ -87,7 +88,7 @@ int main(void) {
     assert(fcntl(pair[0],F_GETFD)>=0); /* shutdown, never close/reuse */
     unsigned char got[12];assert(recv(pair[1],got,12,MSG_DONTWAIT)==2);
     assert(!memcmp(got,request,2));assert(recv(pair[1],got,12,MSG_DONTWAIT)==0);
-    original_write=saved_write;
+    original_send=saved_send;
     original_close(pair[0]);original_close(pair[1]);
     /* A fresh native connection can fulfill the retained catalog request. */
     assert(original_socketpair(AF_UNIX,SOCK_STREAM,0,pair)==0);
@@ -99,6 +100,34 @@ int main(void) {
     pthread_mutex_unlock(&lock);
     assert(recv(pair[1],got,12,MSG_DONTWAIT)==12&&!memcmp(got,request,12));
     original_close(pair[0]);original_close(pair[1]);enabled=0;
+
+    /* A full native stream used to block write_provider_frame indefinitely
+     * while it held the global lock, starving every control GET. Keep the fd
+     * blocking to reproduce that old behavior, but fill it with MSG_DONTWAIT.
+     * Run the assertion in a bounded child so a regression fails instead of
+     * hanging the test job itself. */
+    assert(original_socketpair(AF_UNIX,SOCK_STREAM,0,pair)==0);
+    unsigned char fill[4096]={0};
+    while(original_send(pair[0],fill,sizeof(fill),MSG_DONTWAIT|MSG_NOSIGNAL)>0){}
+    assert(errno==EAGAIN||errno==EWOULDBLOCK);
+    pid_t child=fork();assert(child>=0);
+    if(!child){
+        alarm(2);
+        pthread_mutex_lock(&lock);
+        errno=0;
+        ssize_t result=write_provider_frame(pair[0],request,sizeof(request));
+        int saved_errno=errno;
+        pthread_mutex_unlock(&lock);
+        if(result!=-1||(saved_errno!=EAGAIN&&saved_errno!=EWOULDBLOCK))_exit(2);
+        if(pthread_mutex_trylock(&lock))_exit(3);
+        pthread_mutex_unlock(&lock);
+        _exit(0);
+    }
+    int child_status=0;
+    assert(waitpid(child,&child_status,0)==child);
+    assert(WIFEXITED(child_status)&&WEXITSTATUS(child_status)==0);
+    original_close(pair[0]);original_close(pair[1]);
+
     tvb_registry_init(&registry);encoder.fd=-1;
     char control_text[256]="ADD TVB0123456789ABCDEF switch Original";
     assert(dynamic_control(control_text,sizeof(control_text))==1);
@@ -112,6 +141,6 @@ int main(void) {
     strcpy(control_text,"RENAME TVB0123456789ABCDEF Valid");
     assert(dynamic_control(control_text,sizeof(control_text))==1);
     assert(!strcmp(registry.devices[0].name,"Valid"));
-    puts("PASS invalid/valid levels, timer overflow/boundary, off/heat schedule feedback, zero/prefix-write failures and socket ownership");
+    puts("PASS invalid/valid levels, timer overflow/boundary, off/heat schedule feedback, bounded backpressure, zero/prefix-write failures and socket ownership");
     return 0;
 }
