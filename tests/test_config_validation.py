@@ -4,7 +4,7 @@
 import ast
 import asyncio
 from pathlib import Path
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -13,7 +13,9 @@ from custom_components.tentahacle import models
 from custom_components.tentahacle.const import (
     CONF_BRIDGE_ID,
     CONF_FRITZ_URL,
+    CONF_SOURCE_ENTITY_ID,
     CONF_TOPIC_ROOT,
+    MAX_VIRTUAL_DEVICES,
 )
 
 SOURCE = Path("custom_components/tentahacle/config_flow.py")
@@ -105,3 +107,67 @@ def test_utf8_byte_boundaries_and_valid_names() -> None:
     assert models.validate_topic_root("x" * 251, "lab")
     with pytest.raises(ValueError):
         models.validate_topic_root("x" * 252, "lab")
+
+
+def _subentry_user_methods() -> dict[str, object]:
+    tree = ast.parse(SOURCE.read_text())
+    flow = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "VirtualDeviceSubentryFlow"
+    )
+    methods = [
+        node
+        for node in flow.body
+        if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
+        and node.name in {"async_step_user", "_device_count"}
+    ]
+    for method in methods:
+        method.decorator_list = []
+    namespace = {
+        "MAX_VIRTUAL_DEVICES": MAX_VIRTUAL_DEVICES,
+        "SUBENTRY_TYPE_DEVICE": "device",
+        "CONF_SOURCE_ENTITY_ID": CONF_SOURCE_ENTITY_ID,
+        "probatio": SimpleNamespace(
+            Schema=lambda value: value, Required=lambda key: key
+        ),
+        "EntitySelector": lambda value: value,
+        "EntitySelectorConfig": lambda **values: values,
+    }
+    module = ast.Module(
+        body=[
+            ast.ImportFrom(
+                module="__future__", names=[ast.alias(name="annotations")], level=0
+            ),
+            *methods,
+        ],
+        type_ignores=[],
+    )
+    exec(compile(ast.fix_missing_locations(module), str(SOURCE), "exec"), namespace)  # noqa: S102
+    return namespace
+
+
+@pytest.mark.parametrize(
+    ("count", "limited"),
+    [(MAX_VIRTUAL_DEVICES - 1, False), (MAX_VIRTUAL_DEVICES, True)],
+)
+def test_virtual_device_wizard_enforces_native_capacity(
+    count: int, *, limited: bool
+) -> None:
+    methods = _subentry_user_methods()
+    entry = SimpleNamespace(
+        subentries={
+            str(index): SimpleNamespace(subentry_type="device")
+            for index in range(count)
+        }
+    )
+    flow = SimpleNamespace(
+        _get_entry=lambda: entry,
+        async_abort=lambda **values: {"type": "abort", **values},
+        async_show_form=lambda **values: {"type": "form", **values},
+    )
+    flow._device_count = MethodType(methods["_device_count"], flow)  # noqa: SLF001
+    result = asyncio.run(methods["async_step_user"](flow, None))
+    assert result["type"] == ("abort" if limited else "form")
+    if limited:
+        assert result["reason"] == "device_limit_reached"

@@ -154,6 +154,13 @@ int main(void){
     assert(!r.devices[0].enabled&&r.count==1);
     assert(!candidate(add,&r,&mutate,&announce));assert(r.devices[0].enabled);
     tvb_device_registry pruned=r;
+    assert(!candidate("{\"schema_version\":1,\"operation\":\"prune_devices\",\"keep_uids\":[\"TVB0123456789ABCDEF\",\"TVBFFFFFFFFFFFFFFFF\"]}",&pruned,&mutate,&announce));
+    assert(pruned.count==1);
+    assert(candidate("{\"schema_version\":1,\"operation\":\"prune_devices\",\"keep_uids\":[\"TVBFFFFFFFFFFFFFFFF\",\"TVBffffffffffffffff\"]}",&pruned,&mutate,&announce));
+    pruned=r;
+    assert(!candidate("{\"schema_version\":1,\"operation\":\"prune_devices\",\"keep_uids\":[\"TVBFFFFFFFFFFFFFFFF\"]}",&pruned,&mutate,&announce));
+    assert(pruned.count==0);
+    pruned=r;
     assert(!candidate("{\"schema_version\":1,\"operation\":\"prune_devices\",\"keep_uids\":[]}",&pruned,&mutate,&announce));
     assert(mutate&&pruned.count==0&&pruned.next_remote_id==457);
     assert(!request_id_valid("../../bad")&&!request_id_valid("bad/+"));assert(request_id_valid("id-012_abc"));

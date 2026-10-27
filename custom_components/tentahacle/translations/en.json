@@ -86,7 +86,8 @@
         "source_entity_missing": "The selected Home Assistant entity does not exist."
       },
       "abort": {
-        "source_entity_missing": "The selected Home Assistant entity no longer exists."
+        "source_entity_missing": "The selected Home Assistant entity no longer exists.",
+        "device_limit_reached": "This bridge already has the maximum of 32 virtual devices."
       }
     }
   },

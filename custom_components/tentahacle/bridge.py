@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components import mqtt
 from homeassistant.components.cover import CoverEntityFeature
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_state_change_event,
@@ -35,6 +36,7 @@ from .const import (
     CONF_SOURCE_ENTITY_ID,
     CONF_TOPIC_ROOT,
     DOMAIN,
+    MAX_VIRTUAL_DEVICES,
     PROTOCOL_VERSION,
     DeviceProfile,
 )
@@ -87,6 +89,11 @@ class TentAHAcleBridge:
 
     async def async_start(self) -> None:
         """Subscribe to commands and start state feedback."""
+        if len(self._mappings) > MAX_VIRTUAL_DEVICES:
+            raise ConfigEntryError(
+                f"Bridge has {len(self._mappings)} mappings; maximum is "
+                f"{MAX_VIRTUAL_DEVICES}"
+            )
         await mqtt.async_wait_for_mqtt_client(self.hass)
         await self._async_load_overrides()
         self._unsubscribers.append(
@@ -167,6 +174,9 @@ class TentAHAcleBridge:
         async with self._sync_lock:
             if self._stopping:
                 return
+            # Free stale native slots first, so a replacement can be inserted
+            # even when the persistent provider registry was previously full.
+            await self._async_publish_reconciliation()
             for uid, mapping in self._mappings.items():
                 await self._async_publish_management(uid, mapping)
                 state = self.hass.states.get(mapping[CONF_SOURCE_ENTITY_ID])

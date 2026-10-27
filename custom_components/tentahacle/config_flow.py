@@ -42,6 +42,7 @@ from .const import (
     DEFAULT_FRITZ_URL,
     DEFAULT_TOPIC_ROOT,
     DOMAIN,
+    MAX_VIRTUAL_DEVICES,
     DeviceProfile,
 )
 from .models import (
@@ -212,6 +213,8 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Choose the Home Assistant entity to expose."""
+        if self._device_count() >= MAX_VIRTUAL_DEVICES:
+            return self.async_abort(reason="device_limit_reached")
         errors: dict[str, str] = {}
         if user_input is not None:
             entity_id = user_input[CONF_SOURCE_ENTITY_ID]
@@ -263,6 +266,8 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
                 errors[CONF_PROFILE] = "incompatible_profile"
             elif not _valid_name(user_input[CONF_FRITZ_NAME]):
                 errors[CONF_FRITZ_NAME] = "invalid_name"
+            elif self._device_count() >= MAX_VIRTUAL_DEVICES:
+                return self.async_abort(reason="device_limit_reached")
             else:
                 endpoint_uid = endpoint_uid_from_token(secrets.token_hex(16))
                 data = {
@@ -396,6 +401,13 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
             subentry.subentry_type == SUBENTRY_TYPE_DEVICE
             and subentry.data.get(CONF_SOURCE_ENTITY_ID) == entity_id
             and subentry.data.get(CONF_ENDPOINT_UID) != exclude_uid
+            for subentry in self._get_entry().subentries.values()
+        )
+
+    def _device_count(self) -> int:
+        """Return mappings owned by this bridge, excluding helper subentries."""
+        return sum(
+            subentry.subentry_type == SUBENTRY_TYPE_DEVICE
             for subentry in self._get_entry().subentries.values()
         )
 

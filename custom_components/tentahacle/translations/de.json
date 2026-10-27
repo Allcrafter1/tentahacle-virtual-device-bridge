@@ -86,7 +86,8 @@
         "source_entity_missing": "Die ausgewählte Home-Assistant-Entität existiert nicht."
       },
       "abort": {
-        "source_entity_missing": "Die ausgewählte Home-Assistant-Entität existiert nicht mehr."
+        "source_entity_missing": "Die ausgewählte Home-Assistant-Entität existiert nicht mehr.",
+        "device_limit_reached": "Diese Bridge besitzt bereits die maximal möglichen 32 virtuellen Geräte."
       }
     }
   },

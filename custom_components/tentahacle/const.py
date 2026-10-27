@@ -5,6 +5,7 @@ from enum import StrEnum
 
 DOMAIN = "tentahacle"
 PROTOCOL_VERSION = 1
+MAX_VIRTUAL_DEVICES = 32
 DEFAULT_TOPIC_ROOT = "tentahacle"
 DEFAULT_FRITZ_URL = "http://fritz.box"
 

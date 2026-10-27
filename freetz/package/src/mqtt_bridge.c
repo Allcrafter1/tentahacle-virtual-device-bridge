@@ -409,7 +409,7 @@ static const char *management_candidate(const cJSON *root,tvb_device_registry *c
         result=tvb_registry_set_enabled(candidate,candidate->revision,json_string(root,"uid"),cJSON_IsTrue(enabled));
     }else if(!strcmp(operation,"reconcile_devices")){
         const cJSON *uids=cJSON_GetObjectItemCaseSensitive(root,"enabled_uids");
-        if(!cJSON_IsArray(uids)||cJSON_GetArraySize(uids)>32)return "invalid_enabled_uids";
+        if(!cJSON_IsArray(uids)||cJSON_GetArraySize(uids)>TVB_REGISTRY_CAPACITY)return "invalid_enabled_uids";
         for(const cJSON *uid=uids->child;uid;uid=uid->next){
             if(!cJSON_IsString(uid)||!tvb_registry_valid_uid(uid->valuestring)||!tvb_registry_find(candidate,uid->valuestring))return "unknown_uid";
             const tvb_device *known=tvb_registry_find(candidate,uid->valuestring);
@@ -426,17 +426,16 @@ static const char *management_candidate(const cJSON *root,tvb_device_registry *c
         result=TVB_REGISTRY_OK;
     }else if(!strcmp(operation,"prune_devices")){
         const cJSON *uids=cJSON_GetObjectItemCaseSensitive(root,"keep_uids");
-        if(!cJSON_IsArray(uids)||cJSON_GetArraySize(uids)>32)return "invalid_keep_uids";
+        if(!cJSON_IsArray(uids)||cJSON_GetArraySize(uids)>TVB_REGISTRY_CAPACITY)return "invalid_keep_uids";
         for(const cJSON *uid=uids->child;uid;uid=uid->next){
-            if(!cJSON_IsString(uid)||!tvb_registry_valid_uid(uid->valuestring)||!tvb_registry_find(candidate,uid->valuestring))return "unknown_uid";
-            const tvb_device *known=tvb_registry_find(candidate,uid->valuestring);
+            if(!cJSON_IsString(uid)||!tvb_registry_valid_uid(uid->valuestring))return "invalid_keep_uids";
             for(const cJSON *other=uid->next;other;other=other->next)
-                if(cJSON_IsString(other)&&tvb_registry_find(candidate,other->valuestring)==known)return "duplicate_uid";
+                if(cJSON_IsString(other)&&!strcasecmp(uid->valuestring,other->valuestring))return "duplicate_uid";
         }
         for(size_t i=candidate->count;i>0;i--){
             const char *candidate_uid=candidate->devices[i-1].uid;int keep=0;
             for(const cJSON *uid=uids->child;uid;uid=uid->next)
-                if(tvb_registry_find(candidate,uid->valuestring)==&candidate->devices[i-1])keep=1;
+                if(!strcasecmp(uid->valuestring,candidate_uid))keep=1;
             if(!keep){
                 result=tvb_registry_remove(candidate,candidate->revision,candidate_uid);
                 if(result!=TVB_REGISTRY_OK)return "registry_error";

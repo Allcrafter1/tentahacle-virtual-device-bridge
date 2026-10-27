@@ -120,6 +120,33 @@ def test_missing_thermostat_state_clears_retained_actual_temperature() -> None:
     )
 
 
+def test_sync_prunes_before_upsert_and_reasserts_authority() -> None:
+    methods = bridge_methods()
+    calls: list[str] = []
+    mapping = {
+        CONF_PROFILE: DeviceProfile.SWITCH.value,
+        CONF_SOURCE_ENTITY_ID: "switch.room",
+    }
+    bridge = SimpleNamespace(
+        _stopping=False,
+        _sync_lock=asyncio.Lock(),
+        _mappings={"uid": mapping},
+        hass=SimpleNamespace(states=SimpleNamespace(get=lambda _: None)),
+        _async_publish_management=AsyncMock(
+            side_effect=lambda *_: calls.append("upsert")
+        ),
+        _async_publish_feedback=AsyncMock(),
+        _async_publish_schedule=AsyncMock(
+            side_effect=lambda *_: calls.append("schedule")
+        ),
+        _async_publish_reconciliation=AsyncMock(
+            side_effect=lambda: calls.append("prune")
+        ),
+    )
+    asyncio.run(methods["_async_sync_bridge"](bridge))
+    assert calls == ["prune", "upsert", "schedule", "prune"]
+
+
 def test_removed_thermostat_state_clears_actual_and_schedule() -> None:
     methods = bridge_methods()
     mapping = {
@@ -561,6 +588,7 @@ def test_unload_drains_management_before_replacement_runtime(method: str) -> Non
         assert not stop.done()
         release.set()
         await asyncio.gather(active, queued, stop)
-        bridge._async_publish_reconciliation.assert_awaited_once()  # noqa: SLF001
+        expected = 2 if method == "_async_sync_bridge" else 1
+        assert bridge._async_publish_reconciliation.await_count == expected  # noqa: SLF001
 
     asyncio.run(scenario())
