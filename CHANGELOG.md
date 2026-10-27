@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.0-rc7 - 2026-10-27
+
+- Prevent native `cR/TX` backpressure during pairing and device firmware
+  maintenance from starving the Provider control channel and triggering a
+  false watchdog restart. Native writes retain their ordering through a
+  dedicated mutex while the independent state/health mutex remains available.
+- Duplicate each tracked stream descriptor before releasing the state lock and
+  validate its pair epoch afterwards, so concurrent close and descriptor reuse
+  cannot attach stale catalog bookkeeping or traffic to a new connection.
+- Defer Provider-generated catalog injection until native stream writes finish,
+  preserving frame order without making health checks wait for native I/O.
+- Add a deterministic regression with two blocked native writers, concurrent
+  control `GET`, deferred catalog injection and simulated descriptor reuse.
+
+RC6 correctly tolerated an explicitly disconnected native transport, but four
+additional maintenance incidents showed that a live Provider could instead be
+temporarily blocked behind native stream I/O and be misclassified as a failed
+control channel. RC7 fixes that second path at the Provider lock boundary. The
+automated regression reproduces the mechanism; physical requalification is
+tracked separately in `docs/release-validation.md`.
+
 ## 0.3.0-rc6 - 2026-10-27
 
 - Distinguish a responsive virtual provider whose native AHA transport is

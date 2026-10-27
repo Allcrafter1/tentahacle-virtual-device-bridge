@@ -40,7 +40,17 @@ static int (*original_socketpair)(int, int, int, int[2]);
 static int (*original_close)(int);
 typedef int (*provider_decode_fn)(void *, void *, unsigned, void *, unsigned, unsigned);
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-static int enabled, pairs[32][2], pair_count, incoming_fd = -1;
+/* Preserve the ordering that the former global lock gave native cR/TX stream
+ * writes without blocking provider state or health checks behind their I/O. */
+static pthread_mutex_t native_write_lock = PTHREAD_MUTEX_INITIALIZER;
+struct provider_pair {
+    int endpoints[2];
+    uint64_t epoch;
+};
+static int enabled, pair_count, incoming_fd = -1;
+static struct provider_pair pairs[32];
+static uint64_t pair_epoch;
+static unsigned native_writes_inflight;
 static unsigned generation, announced;
 static unsigned command_count, last_command;
 static int event_pipe[2] = {
@@ -145,6 +155,33 @@ static void unselect_device(void) {
 static void provider_unlock(void) {
     unselect_device();
     pthread_mutex_unlock(&lock);
+}
+
+/* Caller holds lock. File descriptor numbers can be reused after close(), so
+ * a peer alone is not enough to identify the connection across an unlocked
+ * native write. The monotonically increasing epoch makes the later check
+ * fail closed if the old pair disappeared and its numbers were reused. */
+static int provider_pair_snapshot(int fd, int *peer, uint64_t *epoch) {
+    for (int i = 0; i < pair_count; ++i) {
+        if (pairs[i].endpoints[0] == fd || pairs[i].endpoints[1] == fd) {
+            *peer = pairs[i].endpoints[0] == fd ?
+                pairs[i].endpoints[1] : pairs[i].endpoints[0];
+            *epoch = pairs[i].epoch;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Caller holds lock. */
+static int provider_pair_matches(int fd, int peer, uint64_t epoch) {
+    for (int i = 0; i < pair_count; ++i) {
+        if (pairs[i].epoch == epoch &&
+            ((pairs[i].endpoints[0] == fd && pairs[i].endpoints[1] == peer) ||
+             (pairs[i].endpoints[1] == fd && pairs[i].endpoints[0] == peer)))
+            return 1;
+    }
+    return 0;
 }
 
 static unsigned profile_remote(tvb_device_profile p) {
@@ -558,9 +595,11 @@ int socketpair(int domain, int type, int protocol, int sv[2]) {
     if (enabled && !r && domain == AF_UNIX &&
         (type & ~(SOCK_CLOEXEC | SOCK_NONBLOCK)) == SOCK_STREAM) {
         pthread_mutex_lock(&lock);
-        if (pair_count < 32) {
-            pairs[pair_count][0] = sv[0];
-            pairs[pair_count++][1] = sv[1];
+        if (pair_count < 32 && pair_epoch != UINT64_MAX) {
+            pairs[pair_count].endpoints[0] = sv[0];
+            pairs[pair_count].endpoints[1] = sv[1];
+            pairs[pair_count].epoch = ++pair_epoch;
+            ++pair_count;
         }
         provider_unlock();
     }
@@ -575,41 +614,70 @@ ssize_t write(int fd, const void*buf, size_t n) {
         prctl(PR_GET_NAME, name, 0, 0, 0);
         if (!strncmp(name, "sR/TX", 5)) {
             pthread_mutex_lock(&lock);
-            for (int i = 0; i < pair_count; i++) {
-                int peer = pairs[i][0] == fd ? pairs[i][1]:(pairs[i][1] == fd ? pairs[i][0]:-1);
-                if (peer >= 0) {
-                    encoder.fd = fd;
-                    incoming_fd = peer;
-                    encoder.handle = read_be32(p+8);
-                    generation++;
-                    break;
-                }
+            int peer = -1;
+            uint64_t epoch = 0;
+            if (provider_pair_snapshot(fd, &peer, &epoch)) {
+                encoder.fd = fd;
+                incoming_fd = peer;
+                encoder.handle = read_be32(p+8);
+                generation++;
             }
             provider_unlock();
         }
     }
     /* Reuse the real client's startup request and handle. Never synthesize
-     * a peer or inject a request into the provider/server connection.
-     * Hold the lock across the native write: close/reuse must not attach an
-     * old successful request to a newly allocated descriptor pair. */
+     * a peer or inject a request into the provider/server connection. Native
+     * cR/TX writes can block for many seconds during pairing or device
+     * firmware maintenance, so never hold the provider state/control lock
+     * across original_write(). Snapshot the pair epoch first and only apply
+     * catalog bookkeeping if the exact connection still exists afterwards. */
     if (enabled) {
         char name[16] = {0};
         prctl(PR_GET_NAME, name, 0, 0, 0);
         if (!strncmp(name, "cR/TX", 5)) {
+            pthread_mutex_lock(&native_write_lock);
             pthread_mutex_lock(&lock);
-            ssize_t result = original_write(fd, buf, n);
+            int peer = -1;
+            uint64_t epoch = 0;
+            int tracked = provider_pair_snapshot(fd, &peer, &epoch);
+            /* Keep the original open-file description alive while the mutex
+             * is released. Without this duplicate, another thread could
+             * close and reuse the numeric fd before original_write() enters
+             * the kernel, sending old traffic to a new connection. */
+            int write_fd = -1;
+            if (tracked) {
+                do { write_fd = fcntl(fd, F_DUPFD_CLOEXEC, 0); }
+                while (write_fd < 0 && errno == EINTR);
+                if (write_fd < 0) {
+                    /* Fail closed under descriptor exhaustion. Calling the
+                     * potentially blocking native write under the global
+                     * mutex would recreate the watchdog failure; calling it
+                     * unlocked on fd could target a concurrently reused fd. */
+                    int saved = errno;
+                    provider_unlock();
+                    pthread_mutex_unlock(&native_write_lock);
+                    errno = saved;
+                    return -1;
+                }
+                ++native_writes_inflight;
+            }
+            provider_unlock();
+            ssize_t result = original_write(write_fd >= 0 ? write_fd : fd, buf, n);
             int saved = errno;
-            provider_catalog_note_native_write(&catalog_sync, fd, n, result);
-            for (int i = 0; result == 12 && n == 12 && p[0] == 5 && i < pair_count; ++i) {
-                int peer = pairs[i][0] == fd ? pairs[i][1] : (pairs[i][1] == fd ? pairs[i][0] : -1);
-                if (peer >= 0 && provider_catalog_capture(&catalog_sync, fd, peer, p, n)) {
+            if (write_fd >= 0) original_close(write_fd);
+            pthread_mutex_lock(&lock);
+            if (tracked) --native_writes_inflight;
+            if (tracked && provider_pair_matches(fd, peer, epoch)) {
+                provider_catalog_note_native_write(&catalog_sync, fd, n, result);
+                if (result == 12 && n == 12 && p[0] == 5 &&
+                    provider_catalog_capture(&catalog_sync, fd, peer, p, n)) {
                     catalog_event = 1;
                     wake_worker();
-                    break;
                 }
             }
             if (catalog_sync.pending) { catalog_event = 1; wake_worker(); }
             provider_unlock();
+            pthread_mutex_unlock(&native_write_lock);
             errno = saved;
             return result;
         }
@@ -925,12 +993,11 @@ int close(int fd) {
             incoming_fd = -1;
             announced = 0;
         }
-        for (int i = 0; i < pair_count; i++) if (pairs[i][0] == fd || pairs[i][1] == fd) {
+        for (int i = 0; i < pair_count; i++) if (pairs[i].endpoints[0] == fd || pairs[i].endpoints[1] == fd) {
             /* Retire the whole pair before fd reuse; reclaim its bounded slot
              * so repeated AHA reconnects cannot exhaust discovery forever. */
             --pair_count;
-            pairs[i][0] = pairs[pair_count][0];
-            pairs[i][1] = pairs[pair_count][1];
+            pairs[i] = pairs[pair_count];
             --i;
         }
         provider_unlock();
@@ -1306,6 +1373,37 @@ static void retire_closed_watchers(int watchers[4]) {
     }
 }
 
+/* Caller holds lock. Provider-generated catalog traffic must not interleave
+ * with a native cR/TX write on the same SOCK_STREAM. Native writes no longer
+ * hold the global control lock, so defer injection while any tracked write is
+ * in flight and let its completion wake this worker again. */
+static void process_catalog_event_locked(void) {
+    if (!catalog_event || native_writes_inflight) return;
+    struct provider_catalog_ticket ticket;
+    catalog_event = 0;
+    if (provider_catalog_take(&catalog_sync, &ticket) != 1) return;
+    errno = 0;
+    ssize_t sent = write_provider_frame(ticket.fd, ticket.frame,
+        sizeof(ticket.frame));
+    int saved_errno = errno;
+    int ok = sent == (ssize_t)sizeof(ticket.frame);
+    (void)provider_catalog_finish(&catalog_sync, &ticket, ok);
+    if (!ok && sent < 0 &&
+        (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK)) {
+        /* No-progress backpressure leaves the captured stream usable. Retry
+         * after the ordinary one-second worker poll instead of spinning or
+         * waiting for a reconnect. A partial write already retired the stream,
+         * so the scheduled retry simply finds no valid client. */
+        catalog_event = 1;
+        fprintf(stderr, "tvb-catalog-sync: correlated unit metadata, native catalog request deferred by backpressure\n");
+    }
+    else {
+        if (!ok) provider_catalog_forget_fd(&catalog_sync, ticket.fd);
+        fprintf(stderr, "tvb-catalog-sync: correlated unit metadata, native catalog request %s\n",
+            ok ? "sent" : "failed; waiting for a new client connection");
+    }
+}
+
 static void *worker(void*unused) {
     prctl(PR_SET_NAME, "virtual_provider", 0, 0, 0);
     DEBUG("provider: worker started\n");
@@ -1325,33 +1423,7 @@ static void *worker(void*unused) {
         if (encoder.fd >= 0 && announced != generation) {
             if (emit_all()) announced = generation;
         }
-        if (catalog_event) {
-            struct provider_catalog_ticket ticket;
-            catalog_event = 0;
-            if (provider_catalog_take(&catalog_sync, &ticket) == 1) {
-                errno = 0;
-                ssize_t sent = write_provider_frame(ticket.fd, ticket.frame,
-                    sizeof(ticket.frame));
-                int saved_errno = errno;
-                int ok = sent == (ssize_t)sizeof(ticket.frame);
-                (void)provider_catalog_finish(&catalog_sync, &ticket, ok);
-                if (!ok && sent < 0 &&
-                    (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK)) {
-                    /* No-progress backpressure leaves the captured stream
-                     * usable. Retry after the ordinary one-second worker
-                     * poll instead of spinning or waiting for a reconnect.
-                     * A partial write already retired the stream, so the
-                     * single scheduled retry simply finds no valid client. */
-                    catalog_event = 1;
-                    fprintf(stderr, "tvb-catalog-sync: correlated unit metadata, native catalog request deferred by backpressure\n");
-                }
-                else {
-                    if (!ok) provider_catalog_forget_fd(&catalog_sync, ticket.fd);
-                    fprintf(stderr, "tvb-catalog-sync: correlated unit metadata, native catalog request %s\n",
-                        ok ? "sent" : "failed; waiting for a new client connection");
-                }
-            }
-        }
+        process_catalog_event_locked();
         provider_unlock();
         if (poll(pf, 2, 1000) <= 0) continue;
         if (pf[1].revents&POLLIN) {

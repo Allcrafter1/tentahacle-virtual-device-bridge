@@ -5,6 +5,13 @@
 #include <assert.h>
 #include <sys/wait.h>
 static unsigned forwarded, writes;
+static int blocked_ready[2], blocked_release[2], blocked_observed_fd=-1;
+struct blocked_write_result {
+    int fd;
+    const unsigned char *frame;
+    size_t size;
+    ssize_t result;
+};
 static ssize_t forward(int fd,const void *p,size_t n,int flags) {
     (void)fd;(void)p;(void)flags;++forwarded;return (ssize_t)n;
 }
@@ -13,6 +20,19 @@ static ssize_t partial_then_again(int fd,const void *p,size_t n,int flags) {
     if (!writes++) { assert(n>=2);return syscall(SYS_write,fd,p,2); }
     errno=EAGAIN;return -1;
 }
+static ssize_t blocked_native_write(int fd,const void *p,size_t n) {
+    (void)p;blocked_observed_fd=fd;
+    char byte=1;
+    assert(syscall(SYS_write,blocked_ready[1],&byte,1)==1);
+    while(syscall(SYS_read,blocked_release[0],&byte,1)<0)assert(errno==EINTR);
+    return (ssize_t)n;
+}
+static void *run_blocked_native_write(void *opaque) {
+    struct blocked_write_result *result=opaque;
+    assert(!prctl(PR_SET_NAME,"cR/TX-test",0,0,0));
+    result->result=write(result->fd,result->frame,result->size);
+    return NULL;
+}
 static void frame(unsigned char *p,unsigned n,unsigned remote,unsigned function) {
     memset(p,0,n);p[0]=7;p[1]=3;write_be16(p+2,n);write_be16(p+8,remote);
     write_be32(p+12,n-16);write_be32(p+16,function);write_be16(p+20,n-24);
@@ -20,7 +40,9 @@ static void frame(unsigned char *p,unsigned n,unsigned remote,unsigned function)
 static void control(const char *command) {
     int p[2],watchers[4]={-1,-1,-1,-1};
     assert(original_socketpair(AF_UNIX,SOCK_SEQPACKET,0,p)==0);
-    assert(original_send(p[1],command,strlen(command),0)==(ssize_t)strlen(command));
+    ssize_t sent=original_send(p[1],command,strlen(command),0);
+    if(sent!=(ssize_t)strlen(command))fprintf(stderr,"control send failed: result=%zd errno=%d\n",sent,errno);
+    assert(sent==(ssize_t)strlen(command));
     handle_control_client(p[0],watchers);
     char reply[2048];assert(recv(p[1],reply,sizeof(reply),MSG_DONTWAIT)>0);
     original_close(p[1]);
@@ -128,6 +150,83 @@ int main(void) {
     assert(WIFEXITED(child_status)&&WEXITSTATUS(child_status)==0);
     original_close(pair[0]);original_close(pair[1]);
 
+    /* Pairing and device firmware traffic can block a native cR/TX write for
+     * many seconds. It must not hold the provider state/control mutex: GET
+     * remains available and the watchdog must not kill an otherwise healthy
+     * AHA process. Catalog injection must nevertheless stay serialized behind
+     * the native frame. */
+    assert(original_socketpair(AF_UNIX,SOCK_STREAM,0,pair)==0);
+    assert(pipe(blocked_ready)==0&&pipe(blocked_release)==0);
+    memset(&catalog_sync,0,sizeof(catalog_sync));
+    pthread_mutex_lock(&lock);
+    enabled=1;
+    pair_count=1;pair_epoch=40;
+    pairs[0].endpoints[0]=pair[0];pairs[0].endpoints[1]=pair[1];
+    pairs[0].epoch=++pair_epoch;
+    assert(provider_catalog_capture(&catalog_sync,pair[0],pair[1],request,sizeof(request)));
+    provider_catalog_request(&catalog_sync);catalog_event=1;
+    pthread_mutex_unlock(&lock);
+    ssize_t (*saved_write)(int,const void *,size_t)=original_write;
+    original_write=blocked_native_write;
+    struct blocked_write_result blocked={pair[0],request,sizeof(request),-1};
+    pthread_t writer;assert(!pthread_create(&writer,NULL,run_blocked_native_write,&blocked));
+    unsigned char ready;
+    while(syscall(SYS_read,blocked_ready[0],&ready,1)<0)assert(errno==EINTR);
+    struct blocked_write_result blocked_second={pair[0],request,sizeof(request),-1};
+    pthread_t second_writer;
+    assert(!pthread_create(&second_writer,NULL,run_blocked_native_write,&blocked_second));
+    struct pollfd second_ready={blocked_ready[0],POLLIN,0};
+    assert(poll(&second_ready,1,100)==0); /* Native writes remain serialized. */
+    assert(pthread_mutex_trylock(&lock)==0);
+    assert(native_writes_inflight==1);
+    process_catalog_event_locked();
+    assert(catalog_event&&catalog_sync.pending&&!catalog_sync.inflight);
+    pthread_mutex_unlock(&lock);
+    control("GET");
+    assert(syscall(SYS_write,blocked_release[1],&ready,1)==1);
+    assert(!pthread_join(writer,NULL)&&blocked.result==(ssize_t)sizeof(request));
+    while(syscall(SYS_read,blocked_ready[0],&ready,1)<0)assert(errno==EINTR);
+    pthread_mutex_lock(&lock);
+    assert(native_writes_inflight==1);
+    process_catalog_event_locked();
+    assert(catalog_event&&catalog_sync.pending&&!catalog_sync.inflight);
+    pthread_mutex_unlock(&lock);
+    control("GET");
+    assert(syscall(SYS_write,blocked_release[1],&ready,1)==1);
+    assert(!pthread_join(second_writer,NULL)&&
+        blocked_second.result==(ssize_t)sizeof(request));
+    assert(blocked_observed_fd>=0&&blocked_observed_fd!=pair[0]);
+    pthread_mutex_lock(&lock);
+    assert(!native_writes_inflight);
+    process_catalog_event_locked();
+    assert(!catalog_event&&!catalog_sync.pending&&!catalog_sync.inflight);
+    pthread_mutex_unlock(&lock);
+    assert(recv(pair[1],got,sizeof(got),MSG_DONTWAIT)==(ssize_t)sizeof(request));
+    assert(!memcmp(got,request,sizeof(request)));
+
+    /* Simulate close/reuse assigning the same fd numbers a new epoch while a
+     * second native write is outside the mutex. Its stale completion must not
+     * repopulate catalog state for the replacement connection. */
+    memset(&catalog_sync,0,sizeof(catalog_sync));catalog_event=0;
+    blocked_observed_fd=-1;blocked.result=-1;
+    assert(!pthread_create(&writer,NULL,run_blocked_native_write,&blocked));
+    while(syscall(SYS_read,blocked_ready[0],&ready,1)<0)assert(errno==EINTR);
+    pthread_mutex_lock(&lock);
+    assert(native_writes_inflight==1);
+    pairs[0].epoch=++pair_epoch;
+    pthread_mutex_unlock(&lock);
+    control("GET");
+    assert(syscall(SYS_write,blocked_release[1],&ready,1)==1);
+    assert(!pthread_join(writer,NULL)&&blocked.result==(ssize_t)sizeof(request));
+    assert(blocked_observed_fd>=0&&blocked_observed_fd!=pair[0]);
+    assert(!native_writes_inflight);
+    for(unsigned i=0;i<TVB_CATALOG_CLIENTS;i++)assert(!catalog_sync.clients[i].used);
+    original_write=saved_write;pair_count=0;enabled=0;
+    for(unsigned i=0;i<2;i++){
+        original_close(blocked_ready[i]);original_close(blocked_release[i]);
+    }
+    original_close(pair[0]);original_close(pair[1]);
+
     tvb_registry_init(&registry);encoder.fd=-1;
     char control_text[256]="ADD TVB0123456789ABCDEF switch Original";
     assert(dynamic_control(control_text,sizeof(control_text))==1);
@@ -141,6 +240,6 @@ int main(void) {
     strcpy(control_text,"RENAME TVB0123456789ABCDEF Valid");
     assert(dynamic_control(control_text,sizeof(control_text))==1);
     assert(!strcmp(registry.devices[0].name,"Valid"));
-    puts("PASS invalid/valid levels, timer overflow/boundary, off/heat schedule feedback, bounded backpressure, zero/prefix-write failures and socket ownership");
+    puts("PASS invalid/valid levels, timer overflow/boundary, off/heat schedule feedback, bounded native/provider backpressure, zero/prefix-write failures and socket ownership");
     return 0;
 }
