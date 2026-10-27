@@ -47,6 +47,7 @@ from .const import (
 )
 from .models import (
     bridge_details_from_discovery,
+    climate_entity_supported,
     endpoint_uid_from_token,
     fritz_smart_home_url,
     full_color_supported,
@@ -221,6 +222,8 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
             entity_id = user_input[CONF_SOURCE_ENTITY_ID]
             if self._source_in_use(entity_id):
                 errors[CONF_SOURCE_ENTITY_ID] = "already_mapped"
+            elif not self._thermostat_source_supported(entity_id):
+                errors[CONF_SOURCE_ENTITY_ID] = "incompatible_thermostat"
             else:
                 self._source_entity_id = entity_id
                 return await self.async_step_details()
@@ -254,6 +257,8 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
         if source_state is None:
             return self.async_abort(reason="source_entity_missing")
         domain = self._source_entity_id.partition(".")[0]
+        if not self._thermostat_source_supported(self._source_entity_id):
+            return self.async_abort(reason="incompatible_thermostat")
         supported_color_modes = source_state.attributes.get(
             "supported_color_modes", []
         )
@@ -265,6 +270,8 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             if user_input[CONF_PROFILE] not in profiles:
                 errors[CONF_PROFILE] = "incompatible_profile"
+            elif not self._thermostat_source_supported(self._source_entity_id):
+                errors[CONF_PROFILE] = "incompatible_thermostat"
             elif not _valid_name(user_input[CONF_FRITZ_NAME]):
                 errors[CONF_FRITZ_NAME] = "invalid_name"
             elif self._device_count() >= MAX_VIRTUAL_DEVICES:
@@ -351,6 +358,11 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
                 entity_id, exclude_uid=subentry.data[CONF_ENDPOINT_UID]
             ):
                 errors[CONF_SOURCE_ENTITY_ID] = "already_mapped"
+            elif (
+                profile is DeviceProfile.THERMOSTAT
+                and not self._thermostat_source_supported(entity_id)
+            ):
+                errors[CONF_SOURCE_ENTITY_ID] = "incompatible_thermostat"
             elif profile.value not in profiles_for_entity(
                 entity_id.partition(".")[0],
                 source_state.attributes.get("supported_color_modes", []),
@@ -412,6 +424,18 @@ class VirtualDeviceSubentryFlow(ConfigSubentryFlow):
         return sum(
             subentry.subentry_type == SUBENTRY_TYPE_DEVICE
             for subentry in self._get_entry().subentries.values()
+        )
+
+    def _thermostat_source_supported(self, entity_id: str) -> bool:
+        """Validate the exact HA services and range exposed through FRITZ."""
+        if entity_id.partition(".")[0] != "climate":
+            return True
+        source_state = self.hass.states.get(entity_id)
+        if source_state is None:
+            return False
+        return climate_entity_supported(
+            source_state.attributes,
+            fallback_temperature_unit=str(self.hass.config.units.temperature_unit),
         )
 
 

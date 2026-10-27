@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
@@ -14,6 +15,7 @@ from .const import PROTOCOL_VERSION, DeviceProfile
 
 _BRIDGE_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{2,31}$")
 _ENDPOINT_UID = re.compile(r"^TVB[0-9A-F]{16}$")
+_CLIMATE_TARGET_TEMPERATURE = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +166,40 @@ def full_color_supported(supported_color_modes: Collection[str] | None) -> bool:
     )
 
 
+def climate_entity_supported(
+    attributes: Mapping[str, object], *, fallback_temperature_unit: str = "°C"
+) -> bool:
+    """Return whether a climate entity can faithfully implement the FRITZ profile."""
+    features = attributes.get("supported_features")
+    if (
+        not isinstance(features, int)
+        or isinstance(features, bool)
+        or not features & _CLIMATE_TARGET_TEMPERATURE
+    ):
+        return False
+    modes = attributes.get("hvac_modes")
+    if (
+        not isinstance(modes, Collection)
+        or isinstance(modes, (str, bytes))
+        or not {"heat", "off"}.issubset(modes)
+    ):
+        return False
+    unit = attributes.get("temperature_unit", fallback_temperature_unit)
+    if not isinstance(unit, str):
+        return False
+    minimum = _temperature_to_celsius(attributes.get("min_temp"), unit)
+    maximum = _temperature_to_celsius(attributes.get("max_temp"), unit)
+    if minimum is None or maximum is None or minimum > 8 or maximum < 28:
+        return False
+    step = attributes.get("target_temp_step")
+    if step is None:
+        return True
+    normalized_step = _finite_float(step)
+    if normalized_step is None or normalized_step <= 0 or normalized_step > 0.5:
+        return False
+    return math.isclose(0.5 / normalized_step, round(0.5 / normalized_step))
+
+
 def profiles_for_entity(
     domain: str, supported_color_modes: Collection[str] | None = None
 ) -> list[str]:
@@ -183,3 +219,24 @@ def profiles_for_entity(
     if domain == "climate":
         return [DeviceProfile.THERMOSTAT.value]
     return []
+
+
+def _finite_float(value: object) -> float | None:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    try:
+        normalized = float(value)
+    except (OverflowError, ValueError):
+        return None
+    return normalized if math.isfinite(normalized) else None
+
+
+def _temperature_to_celsius(value: object, unit: str) -> float | None:
+    normalized = _finite_float(value)
+    if normalized is None:
+        return None
+    if unit in {"°C", "C"}:
+        return normalized
+    if unit in {"°F", "F"}:
+        return (normalized - 32) * 5 / 9
+    return None

@@ -7,6 +7,7 @@ from custom_components.tentahacle.const import DeviceProfile
 from custom_components.tentahacle.models import (
     VirtualDevice,
     bridge_details_from_discovery,
+    climate_entity_supported,
     endpoint_uid_from_token,
     fritz_smart_home_url,
     full_color_supported,
@@ -172,6 +173,77 @@ def test_fritz_url_validation(value: str, expected: str) -> None:
 )
 def test_fritz_smart_home_link(value: str, expected: str) -> None:
     assert fritz_smart_home_url(value) == expected
+
+
+@pytest.mark.parametrize(
+    "attributes",
+    [
+        {
+            "supported_features": 1,
+            "hvac_modes": ["off", "heat"],
+            "min_temp": 5,
+            "max_temp": 35,
+            "target_temp_step": 0.5,
+            "temperature_unit": "°C",
+        },
+        {
+            "supported_features": 1,
+            "hvac_modes": ["heat", "off", "auto"],
+            "min_temp": 41,
+            "max_temp": 95,
+            "target_temp_step": 0.1,
+            "temperature_unit": "°F",
+        },
+    ],
+)
+def test_compatible_climate_entities_cover_fritz_controls(
+    attributes: dict[str, object],
+) -> None:
+    assert climate_entity_supported(attributes)
+
+
+def test_climate_validation_uses_home_assistant_unit_fallback() -> None:
+    assert climate_entity_supported(
+        {
+            "supported_features": 1,
+            "hvac_modes": ["off", "heat"],
+            "min_temp": 41,
+            "max_temp": 95,
+            "target_temp_step": 0.5,
+        },
+        fallback_temperature_unit="°F",
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"supported_features": 0},
+        {"supported_features": True},
+        {"hvac_modes": ["heat"]},
+        {"hvac_modes": ["off", "cool"]},
+        {"min_temp": 10},
+        {"max_temp": 27},
+        {"target_temp_step": 1},
+        {"target_temp_step": 0.2},
+        {"temperature_unit": "K"},
+        {"min_temp": float("nan")},
+        {"max_temp": 10**400},
+    ],
+)
+def test_incompatible_climate_entities_are_rejected(
+    changes: dict[str, object],
+) -> None:
+    attributes: dict[str, object] = {
+        "supported_features": 1,
+        "hvac_modes": ["off", "heat"],
+        "min_temp": 5,
+        "max_temp": 35,
+        "target_temp_step": 0.5,
+        "temperature_unit": "°C",
+    }
+    attributes.update(changes)
+    assert not climate_entity_supported(attributes)
 
 
 @pytest.mark.parametrize(

@@ -81,12 +81,14 @@
       },
       "error": {
         "already_mapped": "This Home Assistant entity already has a virtual FRITZ device on this bridge.",
+        "incompatible_thermostat": "Choose a thermostat with target-temperature support, heat and off modes, a range covering 8–28 °C, and half-degree-compatible steps.",
         "incompatible_profile": "The entity does not support this persistent FRITZ profile.",
         "invalid_name": "Enter a name without leading or trailing spaces and containing at most 79 UTF-8 bytes.",
         "source_entity_missing": "The selected Home Assistant entity does not exist."
       },
       "abort": {
         "source_entity_missing": "The selected Home Assistant entity no longer exists.",
+        "incompatible_thermostat": "The selected thermostat cannot implement all FRITZ thermostat controls.",
         "device_limit_reached": "This bridge already has the maximum of 32 virtual devices."
       }
     }

@@ -120,7 +120,8 @@ def _subentry_user_methods() -> dict[str, object]:
         node
         for node in flow.body
         if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
-        and node.name in {"async_step_user", "_device_count"}
+        and node.name
+        in {"async_step_user", "_device_count", "_thermostat_source_supported"}
     ]
     for method in methods:
         method.decorator_list = []
@@ -128,6 +129,7 @@ def _subentry_user_methods() -> dict[str, object]:
         "MAX_VIRTUAL_DEVICES": MAX_VIRTUAL_DEVICES,
         "SUBENTRY_TYPE_DEVICE": "device",
         "CONF_SOURCE_ENTITY_ID": CONF_SOURCE_ENTITY_ID,
+        "climate_entity_supported": models.climate_entity_supported,
         "probatio": SimpleNamespace(
             Schema=lambda value: value, Required=lambda key: key
         ),
@@ -171,3 +173,37 @@ def test_virtual_device_wizard_enforces_native_capacity(
     assert result["type"] == ("abort" if limited else "form")
     if limited:
         assert result["reason"] == "device_limit_reached"
+
+
+def test_virtual_device_wizard_rejects_incompatible_climate() -> None:
+    methods = _subentry_user_methods()
+    source_state = SimpleNamespace(
+        attributes={
+            "supported_features": 0,
+            "hvac_modes": ["off", "heat"],
+            "min_temp": 5,
+            "max_temp": 35,
+        }
+    )
+    flow = SimpleNamespace(
+        _get_entry=lambda: SimpleNamespace(subentries={}),
+        _source_in_use=lambda _: False,
+        hass=SimpleNamespace(
+            states=SimpleNamespace(get=lambda _: source_state),
+            config=SimpleNamespace(units=SimpleNamespace(temperature_unit="°C")),
+        ),
+        async_abort=lambda **values: {"type": "abort", **values},
+        async_show_form=lambda **values: {"type": "form", **values},
+        async_step_details=AsyncMock(),
+    )
+    flow._device_count = MethodType(methods["_device_count"], flow)  # noqa: SLF001
+    flow._thermostat_source_supported = MethodType(  # noqa: SLF001
+        methods["_thermostat_source_supported"], flow
+    )
+    result = asyncio.run(
+        methods["async_step_user"](
+            flow, {CONF_SOURCE_ENTITY_ID: "climate.unsupported"}
+        )
+    )
+    assert result["errors"][CONF_SOURCE_ENTITY_ID] == "incompatible_thermostat"
+    flow.async_step_details.assert_not_awaited()
