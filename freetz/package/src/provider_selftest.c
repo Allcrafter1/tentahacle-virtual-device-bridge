@@ -277,9 +277,10 @@ int main(void){
  if(recv(s[1],p,48,MSG_WAITALL)!=48||p[19]!=95)return 60;
  if(recv(s[1],p,168,MSG_WAITALL)!=168||p[0]!=4||p[9]!=199||
     p[16]!=0||p[17]!=0||p[18]!=1||p[19]!=0x40)return 70;
- if(recv(s[1],p,32,MSG_WAITALL)!=32||p[19]!=23||p[27]!=200)return 71;
+ if(recv(s[1],p,32,MSG_WAITALL)!=32||p[19]!=23||
+    u32(p+24)!=(uint32_t)(int32_t)-9999)return 71;
  if(recv(s[1],p,40,MSG_WAITALL)!=40||p[19]!=57||p[24]!=40||
-    p[25]!=36||p[26]!=44||p[28]!=40)return 72;
+    p[25]!=36||p[26]!=44||p[28]!=255)return 72;
  if(recv(s[1],p,28,MSG_WAITALL)!=28||p[19]!=58||p[27]!=100)return 73;
  if(recv(s[1],p,40,MSG_WAITALL)!=40||p[19]!=117||p[27]!=255)return 84;
  if(recv(s[1],p,32,MSG_WAITALL)!=32||p[19]!=55||u32(p+24)!=1||u16(p+28)!=0||u16(p+30)!=0)return 93;

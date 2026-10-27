@@ -43,6 +43,7 @@ def bridge_methods() -> dict:
         "_async_sync_bridge",
         "_async_schedule_tick",
         "_async_publish_schedule",
+        "_async_publish_authoritative_timer",
         "_async_publish_prune",
         "_async_command_message",
         "_async_load_overrides",
@@ -217,6 +218,7 @@ def test_missing_thermostat_state_clears_retained_actual_temperature() -> None:
         _async_publish_management=AsyncMock(),
         _async_publish_feedback=AsyncMock(),
         _async_publish_schedule=AsyncMock(),
+        _async_publish_authoritative_timer=AsyncMock(),
         _async_publish_reconciliation=AsyncMock(),
     )
     asyncio.run(methods["_async_sync_bridge"](bridge))
@@ -280,12 +282,83 @@ def test_sync_prunes_before_upsert_and_reasserts_authority() -> None:
         _async_publish_schedule=AsyncMock(
             side_effect=lambda *_: calls.append("schedule")
         ),
+        _async_publish_authoritative_timer=AsyncMock(
+            side_effect=lambda *_: calls.append("timer")
+        ),
         _async_publish_reconciliation=AsyncMock(
             side_effect=lambda: calls.append("prune")
         ),
     )
     asyncio.run(methods["_async_sync_bridge"](bridge))
-    assert calls == ["prune", "upsert", "schedule", "prune"]
+    assert calls == ["prune", "upsert", "schedule", "timer", "prune"]
+
+
+def test_periodic_tick_retries_device_upserts_and_timer_feedback() -> None:
+    methods = bridge_methods()
+    calls: list[str] = []
+    mapping = {
+        CONF_PROFILE: DeviceProfile.THERMOSTAT.value,
+        CONF_SOURCE_ENTITY_ID: "climate.room",
+        "schedule_workdays": "schedule.workdays",
+    }
+    bridge = SimpleNamespace(
+        _stopping=False,
+        _sync_lock=asyncio.Lock(),
+        _mappings={"uid": mapping},
+        hass=SimpleNamespace(
+            states=SimpleNamespace(
+                get=lambda _: SimpleNamespace(state="heat", attributes={})
+            )
+        ),
+        _async_publish_management=AsyncMock(
+            side_effect=lambda *_: calls.append("upsert")
+        ),
+        _async_publish_feedback=AsyncMock(
+            side_effect=lambda *_: calls.append("feedback")
+        ),
+        _async_publish_schedule=AsyncMock(
+            side_effect=lambda *_: calls.append("schedule")
+        ),
+        _async_publish_authoritative_timer=AsyncMock(
+            side_effect=lambda *_: calls.append("timer")
+        ),
+        _async_publish_reconciliation=AsyncMock(
+            side_effect=lambda: calls.append("prune")
+        ),
+    )
+    bridge._async_sync_bridge = MethodType(  # noqa: SLF001
+        methods["_async_sync_bridge"], bridge
+    )
+    asyncio.run(methods["_async_schedule_tick"](bridge, None))
+    assert calls == [
+        "prune",
+        "upsert",
+        "feedback",
+        "schedule",
+        "timer",
+        "prune",
+    ]
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_authoritative_timer_replays_active_or_cancelled_state(*, active: bool) -> None:
+    methods = bridge_methods()
+    override = ThermostatOverride("boost", 1100, "climate.room", "heat", 20)
+    bridge = SimpleNamespace(
+        _override_lock=asyncio.Lock(),
+        _overrides={"uid": override} if active else {},
+        _async_publish_timer=AsyncMock(),
+    )
+    mapping = {
+        CONF_PROFILE: DeviceProfile.THERMOSTAT.value,
+        CONF_SOURCE_ENTITY_ID: "climate.room",
+    }
+    asyncio.run(
+        methods["_async_publish_authoritative_timer"](bridge, "uid", mapping)
+    )
+    bridge._async_publish_timer.assert_awaited_once_with(  # noqa: SLF001
+        "uid", "boost" if active else "cancel", 1100 if active else 0
+    )
 
 
 def test_removed_thermostat_state_clears_actual_and_schedule() -> None:
@@ -625,7 +698,7 @@ def scheduled_bridge() -> tuple[SimpleNamespace, list, dict]:
         return Mock()
 
     methods["async_call_later"] = schedule
-    for name in ("_schedule_override", "_async_finish_override"):
+    for name in ("_schedule_override", "_async_finish_override", "_async_sync_bridge"):
         setattr(bridge, name, MethodType(methods[name], bridge))
     return bridge, callbacks, methods
 
@@ -856,7 +929,6 @@ def test_unload_drains_management_before_replacement_runtime(method: str) -> Non
         assert not stop.done()
         release.set()
         await asyncio.gather(active, queued, stop)
-        expected = 2 if method == "_async_sync_bridge" else 1
-        assert bridge._async_publish_reconciliation.await_count == expected  # noqa: SLF001
+        assert bridge._async_publish_reconciliation.await_count == 2  # noqa: SLF001
 
     asyncio.run(scenario())

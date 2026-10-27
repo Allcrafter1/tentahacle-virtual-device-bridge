@@ -164,13 +164,14 @@ static int provider_request(const char *request){
 }
 /* Both external helpers are bounded. In particular a stuck flash-save helper
  * must not hold registry_lock forever and prevent MQTT/provider recovery. */
-static int wait_child(pid_t child, unsigned seconds){
+static int wait_child(pid_t child, unsigned seconds, int abort_on_shutdown){
     struct timespec start,now;
     if(clock_gettime(CLOCK_MONOTONIC,&start))goto terminate;
     for(;;){
         int status;pid_t waited=waitpid(child,&status,WNOHANG);
         if(waited==child)return WIFEXITED(status)&&WEXITSTATUS(status)==0;
         if(waited<0&&errno!=EINTR)return 0;
+        if(abort_on_shutdown&&!running)break;
         if(clock_gettime(CLOCK_MONOTONIC,&now))break;
         if(now.tv_sec-start.tv_sec>(time_t)seconds ||
            (now.tv_sec-start.tv_sec==(time_t)seconds&&now.tv_nsec>=start.tv_nsec))break;
@@ -183,6 +184,7 @@ terminate:
     return 0;
 }
 static int native_delete(const char *uid){
+    if(!running)return 0;
     pid_t child=fork();
     if(child<0)return 0;
     if(!child){
@@ -192,9 +194,10 @@ static int native_delete(const char *uid){
         char *const arguments[]={config.aha_control,"delete",(char*)uid,NULL};
         execv(config.aha_control,arguments);_exit(127);
     }
-    return wait_child(child,4);
+    return wait_child(child,4,1);
 }
 static int native_resync(const tvb_device *device){
+    if(!running)return 0;
     pid_t child=fork();
     if(child<0)return 0;
     if(!child){
@@ -203,7 +206,7 @@ static int native_resync(const tvb_device *device){
             (char*)tvb_profile_name(device->profile),NULL};
         execv(config.aha_control,arguments);_exit(127);
     }
-    return wait_child(child,4);
+    return wait_child(child,4,1);
 }
 static void resync_screens_locked(void){
     if(!provider_ready||!screen_resync_due||time(NULL)<screen_resync_due)return;
@@ -345,7 +348,9 @@ static int persist_flash(void){
     if(args[0][0]!='/')return 0;
     pid_t child=fork();if(child<0)return 0;
     if(!child){execv(args[0],args);_exit(127);}
-    return wait_child(child,30);
+    /* Never kill modsave on shutdown: interrupting a flash update is riskier
+     * than a bounded slow service stop.  The init script waits past this cap. */
+    return wait_child(child,30,0);
 }
 static int json_integer(const cJSON *v,uint64_t *result){
     if(!cJSON_IsNumber(v)||!isfinite(v->valuedouble)||v->valuedouble<0||v->valuedouble>MAX_JSON_INTEGER)return 0;
@@ -409,7 +414,7 @@ static const char *management_candidate(const cJSON *root,tvb_device_registry *c
         result=tvb_registry_set_enabled(candidate,candidate->revision,json_string(root,"uid"),cJSON_IsTrue(enabled));
     }else if(!strcmp(operation,"reconcile_devices")){
         const cJSON *uids=cJSON_GetObjectItemCaseSensitive(root,"enabled_uids");
-        if(!cJSON_IsArray(uids)||cJSON_GetArraySize(uids)>TVB_REGISTRY_CAPACITY)return "invalid_enabled_uids";
+        if(!cJSON_IsArray(uids)||cJSON_GetArraySize(uids)>(int)TVB_REGISTRY_CAPACITY)return "invalid_enabled_uids";
         for(const cJSON *uid=uids->child;uid;uid=uid->next){
             if(!cJSON_IsString(uid)||!tvb_registry_valid_uid(uid->valuestring)||!tvb_registry_find(candidate,uid->valuestring))return "unknown_uid";
             const tvb_device *known=tvb_registry_find(candidate,uid->valuestring);
@@ -426,7 +431,7 @@ static const char *management_candidate(const cJSON *root,tvb_device_registry *c
         result=TVB_REGISTRY_OK;
     }else if(!strcmp(operation,"prune_devices")){
         const cJSON *uids=cJSON_GetObjectItemCaseSensitive(root,"keep_uids");
-        if(!cJSON_IsArray(uids)||cJSON_GetArraySize(uids)>TVB_REGISTRY_CAPACITY)return "invalid_keep_uids";
+        if(!cJSON_IsArray(uids)||cJSON_GetArraySize(uids)>(int)TVB_REGISTRY_CAPACITY)return "invalid_keep_uids";
         for(const cJSON *uid=uids->child;uid;uid=uid->next){
             if(!cJSON_IsString(uid)||!tvb_registry_valid_uid(uid->valuestring))return "invalid_keep_uids";
             for(const cJSON *other=uid->next;other;other=other->next)
@@ -651,13 +656,19 @@ static void device_message_locked(struct mosquitto *client,void *userdata,const 
         return;
     }
     if(kind==FEEDBACK_HS){
-        char value[16],extra;unsigned hue,saturation;
+        char value[16];uint32_t hue,saturation;
         if(message->payloadlen<=0||message->payloadlen>15)return;
         memcpy(value,message->payload,(size_t)message->payloadlen);value[message->payloadlen]=0;
-        if(sscanf(value,"%u %u %c",&hue,&saturation,&extra)!=2||hue>=360||saturation>255){
+        const char *cursor=value;
+        if(!tvb_parse_decimal(&cursor,359,&hue)||!isspace((unsigned char)*cursor)){
             fprintf(stderr,"mqtt_bridge: ignored invalid HS feedback\n");return;
         }
-        char request[80];snprintf(request,sizeof(request),"HS %s %u %u\n",endpoint_id,hue,saturation);
+        while(isspace((unsigned char)*cursor))cursor++;
+        if(!tvb_parse_decimal(&cursor,255,&saturation)||*cursor){
+            fprintf(stderr,"mqtt_bridge: ignored invalid HS feedback\n");return;
+        }
+        char request[80];snprintf(request,sizeof(request),"HS %s %u %u\n",endpoint_id,
+            (unsigned)hue,(unsigned)saturation);
         if(!feedback_request(request))fprintf(stderr,"mqtt_bridge: provider rejected HS feedback\n");
         return;
     }

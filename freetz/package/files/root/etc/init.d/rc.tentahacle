@@ -13,6 +13,9 @@ CONTROL=/usr/bin/tentahacle-ctl
 BRIDGE=/usr/sbin/tentahacle-mqtt-bridge
 MQTT_CONFIG=/var/run/tentahacle/mqtt.conf
 BRIDGE_PID=$PID_FILE
+MQTT_LOG=/var/log/tentahacle-mqtt.log
+AHA_LOG=/var/log/tentahacle-aha.log
+LOG_MAX_BYTES=1048576
 restart_requested=no
 
 write_mqtt_config() {
@@ -60,10 +63,10 @@ start_virtual_aha() {
 	rm -f /var/tmp/homeauto /var/tmp/me_avm_home_external.ctl /var/tmp/aha-virtual-provider.ctl
 	if [ "$TENTAHACLE_DEBUG" = yes ]; then
 		AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_HANFUN_EXPERIMENT=1 AHA_VIRTUAL_DEBUG=1 \
-			LD_PRELOAD="$PROVIDER" /usr/bin/aha >>/var/log/tentahacle-aha.log 2>&1 &
+			LD_PRELOAD="$PROVIDER" /usr/bin/aha >>"$AHA_LOG" 2>&1 &
 	else
 		AHA_VIRTUAL_LAB=1 AHA_VIRTUAL_HANFUN_EXPERIMENT=1 \
-			LD_PRELOAD="$PROVIDER" /usr/bin/aha >>/var/log/tentahacle-aha.log 2>&1 &
+			LD_PRELOAD="$PROVIDER" /usr/bin/aha >>"$AHA_LOG" 2>&1 &
 	fi
 	wait_for_provider
 }
@@ -84,34 +87,95 @@ recover_virtual_aha() {
 	return 1
 }
 
+provider_is_healthy() {
+	"$CONTROL" GET 2>/dev/null | grep -q '"connected":true'
+}
+
+bridge_is_running() {
+	[ -r "$BRIDGE_PID" ] || return 1
+	bridge_pid="$(cat "$BRIDGE_PID")"
+	case "$bridge_pid" in
+		*[!0-9]*|"") return 1 ;;
+	esac
+	[ -r "/proc/$bridge_pid/cmdline" ] &&
+		grep -q 'tentahacle-mqtt-bridge' "/proc/$bridge_pid/cmdline"
+}
+
+watchdog_is_running() {
+	[ -r "$WATCHDOG_PID" ] || return 1
+	watchdog_pid="$(cat "$WATCHDOG_PID")"
+	case "$watchdog_pid" in
+		*[!0-9]*|"") return 1 ;;
+	esac
+	[ -r "/proc/$watchdog_pid/cmdline" ] &&
+		grep -q 'rc.tentahacle' "/proc/$watchdog_pid/cmdline" &&
+		grep -q 'watchdog' "/proc/$watchdog_pid/cmdline"
+}
+
+cap_log() {
+	log_file="$1"
+	[ -f "$log_file" ] || return 0
+	log_size="$(wc -c <"$log_file" 2>/dev/null)" || return 0
+	case "$log_size" in
+		*[!0-9]*|"") return 0 ;;
+	esac
+	[ "$log_size" -le "$LOG_MAX_BYTES" ] ||
+		printf '%s\n' "$(date): log exceeded $LOG_MAX_BYTES bytes and was truncated" >"$log_file"
+}
+
+watchdog_cycle() {
+	log_ticks=$((log_ticks + 1))
+	if [ "$log_ticks" -ge 12 ]; then
+		cap_log "$MQTT_LOG"
+		cap_log "$AHA_LOG"
+		log_ticks=0
+	fi
+	if provider_is_healthy; then
+		failures=0
+		if ! bridge_is_running; then
+			echo "$(date): MQTT bridge is not running; restarting it" >&2
+			start_bridge || echo "$(date): MQTT bridge restart failed; retrying later" >&2
+		fi
+		return
+	fi
+	failures=$((failures + 1))
+	[ "$failures" -ge 3 ] || return
+	echo "$(date): provider health check failed three times; restarting aha" >&2
+	if recover_virtual_aha; then
+		echo "$(date): virtual provider recovered" >&2
+		bridge_is_running || start_bridge ||
+			echo "$(date): MQTT bridge restart failed; retrying later" >&2
+	else
+		echo "$(date): virtual provider recovery failed; retrying later" >&2
+		sleep 30
+	fi
+	failures=0
+}
+
 watchdog() {
 	trap 'exit 0' INT TERM
 	failures=0
+	log_ticks=0
 	while sleep 5; do
-		if "$CONTROL" GET 2>/dev/null | grep -q '"connected":true'; then
-			failures=0
-			continue
-		fi
-		failures=$((failures + 1))
-		[ "$failures" -ge 3 ] || continue
-		echo "$(date): provider health check failed three times; restarting aha" >&2
-		if recover_virtual_aha; then
-			echo "$(date): virtual provider recovered" >&2
-		else
-			echo "$(date): virtual provider recovery failed; retrying later" >&2
-			sleep 30
-		fi
-		failures=0
+		watchdog_cycle
 	done
 }
 
 start_watchdog() {
-	"$0" watchdog >>/var/log/tentahacle-mqtt.log 2>&1 &
+	if watchdog_is_running; then
+		return 0
+	fi
+	rm -f "$WATCHDOG_PID"
+	"$0" watchdog >>"$MQTT_LOG" 2>&1 &
 	echo $! >"$WATCHDOG_PID"
 }
 
 start_bridge() {
-	LD_LIBRARY_PATH=/usr/lib/freetz "$BRIDGE" "$MQTT_CONFIG" >>/var/log/tentahacle-mqtt.log 2>&1 &
+	if bridge_is_running; then
+		return 0
+	fi
+	rm -f "$BRIDGE_PID"
+	LD_LIBRARY_PATH=/usr/lib/freetz "$BRIDGE" "$MQTT_CONFIG" >>"$MQTT_LOG" 2>&1 &
 	bridge_pid=$!
 	echo "$bridge_pid" >"$BRIDGE_PID"
 	sleep 1
@@ -120,11 +184,7 @@ start_bridge() {
 		return 0
 	fi
 	rm -f "$BRIDGE_PID"
-	echo "MQTT bridge exited during startup; restoring stock aha" >&2
-	virtual_pid="$(pidof aha 2>/dev/null)"
-	[ -z "$virtual_pid" ] || kill $virtual_pid
-	wait_for_aha_stop || return 1
-	start_stock_aha
+	echo "MQTT bridge exited during startup" >&2
 	return 1
 }
 
@@ -144,13 +204,16 @@ stop_watchdog() {
 		return 0
 	fi
 	kill "$watchdog_pid" 2>/dev/null
-	for unused in 1 2 3 4 5 6 7 8 9 10; do
+	# BusyBox ash may finish the current recovery backoff before acting on TERM.
+	remaining=40
+	while [ "$remaining" -gt 0 ]; do
 		if [ ! -r "/proc/$watchdog_pid/cmdline" ] ||
 			! grep -q 'rc.tentahacle' "/proc/$watchdog_pid/cmdline"; then
 			rm -f "$WATCHDOG_PID"
 			return 0
 		fi
 		sleep 1
+		remaining=$((remaining - 1))
 	done
 	echo "provider watchdog did not stop" >&2
 	return 1
@@ -171,13 +234,17 @@ stop_bridge() {
 		return 0
 	fi
 	kill "$bridge_pid" 2>/dev/null
-	for unused in 1 2 3 4 5 6 7 8 9 10; do
+	# A registry update may be inside a bounded 30-second modsave.  The bridge
+	# deliberately lets that flash write finish instead of killing it midway.
+	remaining=40
+	while [ "$remaining" -gt 0 ]; do
 		if [ ! -r "/proc/$bridge_pid/cmdline" ] ||
 			! grep -q 'tentahacle-mqtt-bridge' "/proc/$bridge_pid/cmdline"; then
 			rm -f "$BRIDGE_PID"
 			return 0
 		fi
 		sleep 1
+		remaining=$((remaining - 1))
 	done
 	echo "MQTT bridge did not stop" >&2
 	return 1
@@ -215,10 +282,13 @@ start() {
 		return 1
 	}
 	write_mqtt_config || return 1
+	watchdog_is_running && return 0
 
-	recover_virtual_aha || return 1
-
-	start_bridge || return 1
+	if recover_virtual_aha; then
+		start_bridge || echo "MQTT bridge startup failed; watchdog will retry" >&2
+	else
+		echo "Virtual provider startup failed; watchdog will retry" >&2
+	fi
 	start_watchdog
 }
 

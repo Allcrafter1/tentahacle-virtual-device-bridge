@@ -222,6 +222,7 @@ class TentAHAcleBridge:
                         uid, mapping, "unavailable", {}
                     )
                 await self._async_publish_schedule(uid, mapping)
+                await self._async_publish_authoritative_timer(uid, mapping)
             await self._async_publish_reconciliation()
 
     async def _async_start_schedule(self, uid: str, mapping: dict[str, Any]) -> None:
@@ -243,14 +244,23 @@ class TentAHAcleBridge:
         )
 
     async def _async_schedule_tick(self, _now: datetime) -> None:
-        """Refresh schedules and retry the authoritative device set."""
-        async with self._sync_lock:
-            if self._stopping:
-                return
-            for uid, mapping in self._mappings.items():
-                if CONF_SCHEDULE_WORKDAYS in mapping:
-                    await self._async_publish_schedule(uid, mapping)
-            await self._async_publish_reconciliation()
+        """Retry the complete authoritative device and state snapshot."""
+        await self._async_sync_bridge()
+
+    async def _async_publish_authoritative_timer(
+        self, uid: str, mapping: dict[str, Any]
+    ) -> None:
+        """Retry the retained thermostat timer state after transient failures."""
+        if DeviceProfile(mapping[CONF_PROFILE]) is not DeviceProfile.THERMOSTAT:
+            return
+        async with self._override_lock:
+            override = self._overrides.get(uid)
+            if override is None:
+                await self._async_publish_timer(uid, "cancel", 0)
+            else:
+                await self._async_publish_timer(
+                    uid, override.action, override.end_time
+                )
 
     async def _async_publish_schedule(self, uid: str, mapping: dict[str, Any]) -> None:
         """Publish the Home Assistant owned 5+2 schedule shadow."""

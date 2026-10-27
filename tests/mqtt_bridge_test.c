@@ -97,6 +97,15 @@ static void profile_matrix_and_cache(void){
     assert(tvb_registry_set_color_full(&registry,registry.revision,color_uid,1)==TVB_REGISTRY_OK);
     feedback(color_uid,"hs","120 100");
     assert(strstr(feedback_cache[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT][FEEDBACK_HS],"120 100"));
+    feedback(color_uid,"hs","359 255");
+    assert(strstr(feedback_cache[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT][FEEDBACK_HS],"359 255"));
+    feedback(color_uid,"hs","999999999999999");
+    feedback(color_uid,"hs","1 999999999999");
+    feedback(color_uid,"hs","-1 2");
+    feedback(color_uid,"hs","1 2 trailing");
+    feedback(color_uid,"hs","360 0");
+    feedback(color_uid,"hs","0 256");
+    assert(strstr(feedback_cache[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT][FEEDBACK_HS],"359 255"));
     feedback(color_uid,"color_temperature","3000");
     assert(!*feedback_cache[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT][FEEDBACK_HS]);
     assert(strstr(feedback_cache[TVB_PROFILE_COLOR_TEMPERATURE_LIGHT][FEEDBACK_COLOR_TEMP],"3000"));
@@ -127,8 +136,23 @@ int main(void){
     profile_matrix_and_cache();
     pid_t timed_child=fork();assert(timed_child>=0);
     if(!timed_child){for(;;)pause();}
-    assert(!wait_child(timed_child,1));
+    assert(!wait_child(timed_child,1,0));
     assert(waitpid(timed_child,NULL,WNOHANG)==-1&&errno==ECHILD);
+    pid_t stopped_child=fork();assert(stopped_child>=0);
+    if(!stopped_child){for(;;)pause();}
+    pid_t stop_signal=fork();assert(stop_signal>=0);
+    if(!stop_signal){struct timespec delay={0,100000000};nanosleep(&delay,NULL);kill(getppid(),SIGTERM);_exit(0);}
+    signal(SIGTERM,stop_handler);running=1;
+    struct timespec stop_started,stop_finished;
+    assert(!clock_gettime(CLOCK_MONOTONIC,&stop_started));
+    assert(!wait_child(stopped_child,30,1));
+    assert(!clock_gettime(CLOCK_MONOTONIC,&stop_finished));
+    assert(stop_finished.tv_sec-stop_started.tv_sec<3);
+    assert(waitpid(stopped_child,NULL,WNOHANG)==-1&&errno==ECHILD);
+    assert(waitpid(stop_signal,NULL,0)==stop_signal);signal(SIGTERM,SIG_DFL);running=1;
+    pid_t flash_child=fork();assert(flash_child>=0);
+    if(!flash_child){struct timespec delay={0,100000000};nanosleep(&delay,NULL);_exit(0);}
+    running=0;assert(wait_child(flash_child,2,0));running=1;
     assert(identifier_valid("bridge_7530-1",32)&&!identifier_valid("bridge/7530",32));
     assert(!identifier_valid("ab",32)&&!identifier_valid("Bridge",32));
     assert(!identifier_valid("123456789012345678901234567890123",32));

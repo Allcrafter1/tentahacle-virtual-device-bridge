@@ -28,7 +28,10 @@ def test_provider_watchdog_is_packaged() -> None:
     assert "stop_watchdog || return 1" in init_script
     assert "stop_bridge || return 1" in init_script
     assert "tentahacle-mqtt-bridge" in init_script
-    assert "MQTT bridge exited during startup; restoring stock aha" in init_script
+    assert "MQTT bridge is not running; restarting it" in init_script
+    assert "Virtual provider startup failed; watchdog will retry" in init_script
+    assert "remaining=40" in init_script
+    assert "LOG_MAX_BYTES=1048576" in init_script
 
 
 def test_bridge_reports_the_resolved_package_version() -> None:

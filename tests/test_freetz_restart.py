@@ -9,6 +9,14 @@ SCRIPT = (
 )
 
 
+def shell_function(name: str) -> str:
+    """Return one top-level shell function from the service script."""
+    source = SCRIPT.read_text()
+    start = source.index(name + "() {")
+    end = source.index("\n}\n", start) + 3
+    return source[start:end]
+
+
 def transition(action: str, stop_result: int = 0) -> subprocess.CompletedProcess:
     source = SCRIPT.read_text().replace(". /etc/init.d/modlibrc", ":")
     # Model the presence of the virtual-provider socket without opening one.
@@ -92,11 +100,8 @@ rmdir "$TESTPROC"
 
 
 def test_recovery_never_starts_stock_while_old_aha_is_still_alive() -> None:
-    source = SCRIPT.read_text()
-    start = source.index("recover_virtual_aha() {")
-    end = source.index("\n}\n", start) + 3
     script = (
-        source[start:end]
+        shell_function("recover_virtual_aha")
         + """
 waits=0
 pidof() { echo 123; }
@@ -112,3 +117,115 @@ recover_virtual_aha
     )
     assert result.returncode != 0
     assert "unsafe-stock-start" not in result.stdout
+
+
+def test_watchdog_restarts_bridge_when_provider_is_still_healthy() -> None:
+    script = (
+        shell_function("watchdog_cycle")
+        + """
+failures=2
+provider_is_healthy() { return 0; }
+bridge_is_running() { return 1; }
+start_bridge() { echo bridge-start; }
+date() { echo now; }
+watchdog_cycle
+echo failures:$failures
+"""
+    )
+    result = subprocess.run(
+        ["/bin/sh", "-s"], input=script, text=True, capture_output=True, check=False
+    )
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == ["bridge-start", "failures:0"]
+    assert "MQTT bridge is not running" in result.stderr
+
+
+def test_watchdog_recovers_provider_then_ensures_bridge_is_running() -> None:
+    script = (
+        shell_function("watchdog_cycle")
+        + """
+failures=0
+provider_is_healthy() { return 1; }
+recover_virtual_aha() { echo provider-recover; return 0; }
+bridge_is_running() { return 1; }
+start_bridge() { echo bridge-start; }
+date() { echo now; }
+watchdog_cycle
+watchdog_cycle
+watchdog_cycle
+echo failures:$failures
+"""
+    )
+    result = subprocess.run(
+        ["/bin/sh", "-s"], input=script, text=True, capture_output=True, check=False
+    )
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == [
+        "provider-recover",
+        "bridge-start",
+        "failures:0",
+    ]
+
+
+def test_initial_provider_failure_still_starts_recovery_watchdog() -> None:
+    script = (
+        shell_function("start")
+        + """
+EXPECTED_AHA_SHA256=expected
+TENTAHACLE_MQTT_HOST=broker
+TENTAHACLE_MQTT_PORT=1883
+TENTAHACLE_BRIDGE_ID=bridge
+sha256sum() { echo 'expected  /usr/bin/aha'; }
+write_mqtt_config() { :; }
+recover_virtual_aha() { return 1; }
+start_bridge() { echo unexpected-bridge-start; }
+start_watchdog() { echo watchdog-start; }
+watchdog_is_running() { return 1; }
+start
+"""
+    )
+    result = subprocess.run(
+        ["/bin/sh", "-s"], input=script, text=True, capture_output=True, check=False
+    )
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == ["watchdog-start"]
+    assert "watchdog will retry" in result.stderr
+
+
+def test_existing_watchdog_prevents_duplicate_recovery_workers() -> None:
+    script = (
+        shell_function("start")
+        + """
+EXPECTED_AHA_SHA256=expected
+TENTAHACLE_MQTT_HOST=broker
+TENTAHACLE_MQTT_PORT=1883
+TENTAHACLE_BRIDGE_ID=bridge
+sha256sum() { echo 'expected  /usr/bin/aha'; }
+write_mqtt_config() { :; }
+watchdog_is_running() { return 0; }
+recover_virtual_aha() { echo unexpected-recovery; }
+start_watchdog() { echo unexpected-watchdog; }
+start
+"""
+    )
+    result = subprocess.run(
+        ["/bin/sh", "-s"], input=script, text=True, capture_output=True, check=False
+    )
+    assert result.returncode == 0
+    assert not result.stdout
+
+
+def test_log_cap_truncates_same_file_for_open_append_writers(tmp_path: Path) -> None:
+    log_file = tmp_path / "bridge.log"
+    log_file.write_text("x" * 20)
+    script = f"""
+LOG_MAX_BYTES=10
+date() {{ echo now; }}
+{shell_function("cap_log")}
+cap_log {shlex.quote(str(log_file))}
+"""
+    result = subprocess.run(
+        ["/bin/sh", "-s"], input=script, text=True, capture_output=True, check=False
+    )
+    assert result.returncode == 0
+    assert "was truncated" in log_file.read_text()
