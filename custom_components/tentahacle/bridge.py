@@ -203,25 +203,33 @@ class TentAHAcleBridge:
 
     async def _async_publish_schedule(self, uid: str, mapping: dict[str, Any]) -> None:
         """Publish the Home Assistant owned 5+2 schedule shadow."""
+        if DeviceProfile(mapping[CONF_PROFILE]) is not DeviceProfile.THERMOSTAT:
+            return
         climate = self.hass.states.get(mapping[CONF_SOURCE_ENTITY_ID])
         week = self.hass.states.get(mapping.get(CONF_SCHEDULE_WEEK_PROFILE, ""))
         workdays = self.hass.states.get(mapping.get(CONF_SCHEDULE_WORKDAYS, ""))
         holidays = self.hass.states.get(mapping.get(CONF_SCHEDULE_HOLIDAYS, ""))
-        if climate is None or week is None or workdays is None or holidays is None:
-            return
-        enabled = (
-            climate.attributes.get("preset_mode") == "schedule"
-            and week.state == "5+2"
-            and workdays.state not in {"", "unknown", "unavailable"}
-            and holidays.state not in {"", "unknown", "unavailable"}
-        )
-        try:
-            payload = schedule_shadow_payload(
-                dt_util.now(), workdays.state, holidays.state, enabled=enabled
+        payload = "disabled"
+        if (
+            climate is not None
+            and week is not None
+            and workdays is not None
+            and holidays is not None
+        ):
+            enabled = (
+                climate.attributes.get("preset_mode") == "schedule"
+                and week.state == "5+2"
+                and workdays.state not in {"", "unknown", "unavailable"}
+                and holidays.state not in {"", "unknown", "unavailable"}
             )
-        except ProtocolError as err:
-            _LOGGER.warning("Disabling invalid schedule shadow for %s: %s", uid, err)
-            payload = "disabled"
+            try:
+                payload = schedule_shadow_payload(
+                    dt_util.now(), workdays.state, holidays.state, enabled=enabled
+                )
+            except ProtocolError as err:
+                _LOGGER.warning(
+                    "Disabling invalid schedule shadow for %s: %s", uid, err
+                )
         await mqtt.async_publish(
             self.hass,
             f"{self.topic_prefix}/device/{uid}/schedule/set",

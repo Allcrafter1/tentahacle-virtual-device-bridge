@@ -11,7 +11,11 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from custom_components.tentahacle.const import CONF_SOURCE_ENTITY_ID
+from custom_components.tentahacle.const import (
+    CONF_PROFILE,
+    CONF_SOURCE_ENTITY_ID,
+    DeviceProfile,
+)
 from custom_components.tentahacle.protocol import ProtocolError
 from custom_components.tentahacle.thermostat import (
     ThermostatOverride,
@@ -28,6 +32,7 @@ def bridge_methods() -> dict:
         "async_stop",
         "_async_sync_bridge",
         "_async_schedule_tick",
+        "_async_publish_schedule",
         "_async_apply_override",
         "_async_handle_timer",
         "_async_finish_override",
@@ -56,6 +61,12 @@ def bridge_methods() -> dict:
         "timer_request": timer_request,
         "ProtocolError": ProtocolError,
         "CONF_SOURCE_ENTITY_ID": CONF_SOURCE_ENTITY_ID,
+        "CONF_PROFILE": CONF_PROFILE,
+        "DeviceProfile": DeviceProfile,
+        "CONF_SCHEDULE_WEEK_PROFILE": "schedule_week_profile",
+        "CONF_SCHEDULE_WORKDAYS": "schedule_workdays",
+        "CONF_SCHEDULE_HOLIDAYS": "schedule_holidays",
+        "mqtt": SimpleNamespace(async_publish=AsyncMock()),
         "dt_util": SimpleNamespace(
             utcnow=lambda: datetime.fromtimestamp(1000, UTC),
         ),
@@ -63,6 +74,26 @@ def bridge_methods() -> dict:
     # Execute only checked-in method definitions; no user-controlled source.
     exec(compile(ast.fix_missing_locations(module), str(source), "exec"), namespace)  # noqa: S102
     return namespace
+
+
+def test_missing_schedule_adapter_clears_retained_schedule() -> None:
+    methods = bridge_methods()
+    bridge = SimpleNamespace(
+        hass=SimpleNamespace(states=SimpleNamespace(get=lambda _: None)),
+        topic_prefix="tentahacle/lab",
+    )
+    mapping = {
+        CONF_PROFILE: DeviceProfile.THERMOSTAT.value,
+        CONF_SOURCE_ENTITY_ID: "climate.room",
+    }
+    asyncio.run(methods["_async_publish_schedule"](bridge, "uid", mapping))
+    methods["mqtt"].async_publish.assert_awaited_once_with(
+        bridge.hass,
+        "tentahacle/lab/device/uid/schedule/set",
+        "disabled",
+        qos=1,
+        retain=True,
+    )
 
 
 def timer_bridge() -> SimpleNamespace:
