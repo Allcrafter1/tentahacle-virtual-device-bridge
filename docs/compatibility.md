@@ -18,13 +18,16 @@ The provider refuses startup if bridge model, architecture or `aha` fingerprint
 is unknown. Adding another firmware requires offline protocol
 comparison, isolated self-tests and a live laboratory qualification run.
 
-The listed Mesh combination is functionally validated on the preceding 0.1.5
+The listed Mesh combination was functionally validated on the earlier 0.1.5
 laboratory baseline, including exact brightness round trips. It is not the
-recommended latency topology: commands
-from the 6690 master to virtual endpoints on the 7530 took about 6–7 seconds in
-the laboratory. Direct pairing of the 440 with the dedicated bridge box is the
-tested target topology. The 0.1.5 baseline completed switch and brightness
-command round trips in both directions. Version 0.2.0-beta.1 contains the
-subsequent robustness audit and complete product/identifier rename. It passed
-the repository suites but has not yet completed live physical-controller
-qualification.
+recommended latency topology: commands from the 6690 master to virtual
+endpoints on the 7530 took about 6–7 seconds in the laboratory. Direct pairing
+of the 440 with the dedicated bridge box is the target topology.
+
+Version 0.3.0-rc.1 completes the existing profile round trips and the bounded
+recovery/security audit. Its host, parser, fault-injection and sanitizer suites
+pass. Physical qualification of the newly completed color, cover and thermostat
+paths, recovery cases and native FRITZ!OS automations remains tracked in
+[`release-validation.md`](release-validation.md). Until that checklist passes,
+the candidate is suitable for the dedicated laboratory box but not yet the
+recommended seven-controller production rollout.

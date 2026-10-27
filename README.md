@@ -15,9 +15,11 @@ state then travel in both directions over local MQTT.
 For example, a Zigbee, Matter, Hue or Wi-Fi light that already works in Home
 Assistant can appear as a FRITZ! light on the 440. Depending on the selected
 profile, the 440 can switch it, dim it and adjust its color temperature.
+With a compatible color light, the 440 color palette is also translated to the
+Home Assistant light and the confirmed color is sent back.
 
 > [!IMPORTANT]
-> This is independent, experimental community software. The first release
+> This is independent, experimental community software. The current candidate
 > supports one exact bridge model and firmware version. Use a dedicated bridge
 > box, not the FRITZ!Box responsible for your Internet connection.
 >
@@ -67,14 +69,20 @@ configuration exports, serial numbers or other private device data in an issue.
 | Home Assistant source | Virtual FRITZ! device | Available functions |
 |---|---|---|
 | `switch`, `input_boolean` | switch/socket | on/off |
-| `light` | dimmable or color-temperature light | on/off, brightness, optional color temperature |
-| `cover` | blind | open, close, stop, position |
-| `climate` | radiator thermostat | mode, setpoint, Boost/cold timer, optional next-change schedule display |
+| `light` | dimmable or color light | on/off, brightness, color temperature where supported, and Hue/Saturation for HA lights with `hs`, `xy`, `rgb`, `rgbw` or `rgbww` support |
+| `cover` | blind | open/close; intermediate position only with `SET_POSITION`, stop only with `STOP` |
+| `climate` | radiator thermostat | heat/off, 8–28 °C setpoint, MAX, current temperature, Boost/cold timer, Celsius/Fahrenheit conversion and optional next-change schedule display |
 
 FRITZ!OS remains the layout editor for the 440. Home Assistant owns the mapping
 between the virtual FRITZ! device and the real entity. One virtual device can be
 placed on several controllers, and replacing the mapped Home Assistant entity
 can preserve its FRITZ! identity and existing 440 assignments.
+
+A bridge supports at most **32 virtual devices**. Create, rename, rebind and
+delete them in Home Assistant; deleting a mapping also removes its native
+device. The virtual parent is deliberately not independently deletable in
+FRITZ!OS. Use FRITZ!OS for controller layout and for native templates, scenes
+and routines—the bridge does not recreate those features in Home Assistant.
 
 ## Current compatibility and limitations
 
@@ -92,20 +100,40 @@ disabled on the bridge until a new version has been analysed and allowlisted.
 The validated Mesh-master route works but added about 6-7 seconds of command
 latency in the laboratory. Pairing the 440 directly with the dedicated bridge
 box is the intended topology and has been tested in both directions with
-switching and dimming. Version 0.2.0-beta.1 adds the accumulated recovery,
-catalogue-sync, parser and lifecycle hardening and completes the TentAHAcle
-rename. This beta passed the repository test suites but has not yet completed
-live qualification with the physical controller.
+switching and dimming. The current development candidate adds full-color and
+current-temperature feedback, capability-aware cover handling, thermostat MAX,
+device-capacity enforcement and additional recovery/lifecycle hardening. These
+paths have automated coverage but have not all completed the focused physical
+release qualification listed below.
 See [Compatibility](docs/compatibility.md) for the exact baseline.
+
+Known boundaries of the current candidate:
+
+- binary covers report confirmed end positions but do not invent a position
+  while moving; unsupported stop or intermediate-position commands are rejected;
+- FRITZ!OS can show the virtual blind's parent as a light/LED and can warn about
+  unset end positions because no real blind calibration exists;
+- a thermostat value above 28 °C is representable only when it is exactly the
+  source entity's MAX value; other FRITZ thermostat settings such as locks,
+  offset, sensor selection, adaptive heating or holiday modes are not bridged;
+- an already open 440 page may not refresh immediately. Reopening it must show
+  the current confirmed state; the same behavior was reproduced with original
+  thermostat hardware;
+- virtual devices can be selected and stored in native templates and scenes,
+  but final runtime qualification of templates, scenes and routines is still
+  part of the release checklist.
 
 ### Project status and contributions
 
-This is a working experimental beta, not a finished appliance. The supported
+This is working experimental software, not a finished appliance. The supported
 profiles, persistent device lifecycle, MQTT recovery and direct 440 command
 path have automated tests and have been exercised on the documented laboratory
-setup. Useful contributions include longer real-world testing, verification on
-additional FRITZ!OS builds and hardware, better Home Assistant diagnostics,
-parser fuzzing and further modularisation of the native MQTT bridge. Please
+setup. Before broad deployment, the release candidate still needs focused
+hardware checks for repeated warm/cold and color changes, binary and
+positionable covers, complete thermostat timer/restart behavior, and one
+harmless native template, scene and routine. Useful contributions include
+longer real-world testing and verification on additional supported hardware.
+Please
 report reproducible findings in [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues).
 
 No AVM firmware, AVM binary or modified firmware image is distributed here.
@@ -117,6 +145,7 @@ boundaries](docs/licensing.md) before installing it.
 - [Installation, update and rollback](docs/installation.md)
 - [Architecture and user workflow](docs/architecture.md)
 - [Compatibility policy](docs/compatibility.md)
+- [Finite release validation checklist](docs/release-validation.md)
 - [MQTT protocol version 1](docs/mqtt-protocol.md)
 - [Product decisions](docs/decisions.md)
 - [Licensing and distribution boundaries](docs/licensing.md)

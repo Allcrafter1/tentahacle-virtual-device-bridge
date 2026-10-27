@@ -13,13 +13,13 @@ device on the FRITZ!Smart Control 440. The normal path is:
 After the one-time firmware preparation, normal configuration requires no SSH,
 terminal commands or manual file editing.
 
-> [!WARNING]
-> Version 0.2.0-beta.1 is a clean break from the former 0.1.x test builds. It
-> deliberately uses new Home Assistant, MQTT, Freetz, filesystem and virtual
-> device identifiers. There is no automatic migration: remove the old test
-> integration and bridge package, install this beta fresh, and recreate the
-> virtual devices and their controller assignments. Back up the box first if
-> you need to preserve the old laboratory state.
+> [!IMPORTANT]
+> Version 0.3.0-rc.1 upgrades 0.2.0-beta.1 in place: update the Home Assistant
+> integration and Freetz package together, while keeping existing virtual-device
+> identities and controller assignments. Only installations coming directly
+> from a former 0.1.x test build need a clean reinstall because 0.2.0-beta.1
+> deliberately changed the Home Assistant, MQTT, Freetz, filesystem and virtual
+> device identifiers. Back up both sides before either update path.
 
 If the FRITZ!Box modification is the part keeping you from trying the project,
 open a [GitHub issue](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues).
@@ -27,7 +27,7 @@ The maintainer is willing to work through a compatible setup with users and
 turn recurring difficulties into a simpler documented process. Do not attach
 passwords, configuration exports, serial numbers or other private device data.
 
-The first public target is deliberately narrow: classic FRITZ!Box 7530
+The currently supported target is deliberately narrow: classic FRITZ!Box 7530
 (HW236), German FRITZ!OS 8.25, and the exact `aha` fingerprint listed in the
 compatibility document. Do not use the build on another model or firmware.
 
@@ -238,10 +238,12 @@ Then enable **Packages → T → TentAHAcle - Virtual Device Bridge** in `make m
    Manual setup uses the same bridge ID and the default MQTT topic root
    `tentahacle`.
 8. Select one HA entity per virtual device. The integration infers the narrowest
-   matching profile; a color-temperature light may deliberately be reduced to
-   a dimmable light. The final wizard page and a persistent Home Assistant
-   notification both link directly to FRITZ!OS. Assign or configure the
-   resulting device there.
+   matching profile; a color-capable light may deliberately be reduced to a
+   dimmable light. The color profile automatically enables Hue/Saturation when
+   the HA light supports `hs`, `xy`, `rgb`, `rgbw` or `rgbww`; otherwise it
+   provides color temperature only. The final wizard page and a persistent Home
+   Assistant notification both link directly to FRITZ!OS. Assign or configure
+   the resulting device there.
 
 A 7530 that already runs Freetz can normally be updated by building without
 `--flash` and uploading the locally produced image through the Freetz web
@@ -253,6 +255,51 @@ One FRITZ device can be placed on several 440 controllers, so duplicate
 mappings are unnecessary. Reconfiguring a mapping can bind a replacement HA
 entity or change the FRITZ name without changing its FRITZ identity. A device
 type change creates a new mapping and requires a new 440 assignment.
+
+One bridge supports at most **32 virtual devices**. Home Assistant is the
+lifecycle authority: create, rename, rebind and delete devices there. Deleting
+a mapping removes its virtual device from the native AHA registry as well. The
+virtual parent reports itself as non-deletable in FRITZ!OS so that FRITZ!OS
+cannot silently diverge from Home Assistant. If the complete Home Assistant
+bridge entry is removed, the integration restores active thermostat overrides
+where possible and requests an empty native registry. Do this while the source
+entities and MQTT broker are reachable. If cleanup fails, Home Assistant logs
+the error and retains its private recovery state; an affected thermostat or a
+stale native endpoint may then require manual cleanup.
+
+FRITZ!OS remains the intended place to assign a virtual device to one or more
+440 controllers, choose its display position/name, and include it in native
+templates, scenes and routines. Those native automation functions are not
+duplicated by the bridge.
+
+## Profile behavior and current boundaries
+
+- **Switch/socket:** `switch`, `input_boolean`, and reduced on/off lights expose
+  a confirmed on/off roundtrip.
+- **Lights:** dimmable lights add brightness. The color profile adds color
+  temperature where supported and Hue/Saturation for HA color modes `hs`,
+  `xy`, `rgb`, `rgbw` and `rgbww`.
+- **Covers:** every selectable source must support both opening and closing,
+  directly or through numeric positioning. Intermediate positions require
+  `SET_POSITION`; stop requires `STOP`. A binary cover reports confirmed 0/100
+  endpoints but no invented position while it is moving.
+- **Thermostats:** the bridged set is target temperature from 8–28 °C, Heat/Off,
+  exact source MAX, current temperature, Boost/cold timers and optional schedule
+  display. Celsius and Fahrenheit HA configurations are converted. A source
+  value above 28 °C that is not exactly MAX has no native FRITZ representation.
+
+The virtual blind parent can appear cosmetically as a light/LED in FRITZ!OS,
+and FRITZ!OS can warn that blind end positions are not calibrated. The bridge
+does not invent calibration data for hardware that does not exist. Likewise,
+an already open 440 page does not always refresh immediately; reopen it to see
+the latest confirmed state. This display behavior was also reproduced with an
+original thermostat.
+
+The command/state paths above have automated coverage. Before broad deployment,
+the current release candidate still needs focused physical checks for repeated
+warm/cold and color changes, binary and positionable covers, complete
+thermostat timer/restart behavior, and execution of one harmless native
+template, scene and routine.
 
 ## Pair the FRITZ!Smart Control 440 directly with the bridge
 
@@ -291,8 +338,15 @@ survived a Home Assistant restart.
 For a Zigbee2MQTT thermostat, the integration automatically enables the
 schedule shadow when the climate entity has sibling entities named
 `select.<name>_week`, `text.<name>_workdays_schedule`, and
-`text.<name>_holidays_schedule`. Other thermostats retain all ordinary and
-timed controls without schedule mirroring.
+`text.<name>_holidays_schedule`. Other thermostats retain setpoint, Heat/Off,
+MAX, current temperature and Boost/cold timers without schedule mirroring.
+
+Home Assistant remains authoritative for the virtual thermostat. Do not edit
+its schedule or other thermostat configuration in FRITZ!OS or the FRITZ!App.
+Comfort/reduced settings, offset, locks, external-sensor selection, adaptive
+heating, holiday/summer and window functions are not bridge features. The
+displayed battery state is synthetic and always healthy/100%, because the
+virtual endpoint has no battery.
 
 The bridge uses the central MQTT broker; it does not run another broker on the
 FRITZ!Box. The small `mosquitto_pub` diagnostic client is included because

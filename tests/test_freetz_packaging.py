@@ -1,11 +1,14 @@
 """Validate metadata required by the Freetz package build."""
 
+import json
+import re
 from pathlib import Path
 
 PACKAGE_FILES = Path(__file__).parents[1] / "freetz" / "package" / "files"
 PACKAGE_MAKEFILE = (
     Path(__file__).parents[1] / "freetz" / "package" / "tentahacle.mk.in"
 )
+ROOT = Path(__file__).parents[1]
 
 
 def test_translated_freetz_cgi_is_declared() -> None:
@@ -40,3 +43,15 @@ def test_bridge_reports_the_resolved_package_version() -> None:
 
     assert '-DTVB_VERSION=\\"$(TENTAHACLE_VERSION)\\"' in makefile
     assert '-DTVB_VERSION=\\"$($(PKG)_VERSION)\\"' not in makefile
+
+
+def test_home_assistant_freetz_and_changelog_versions_match() -> None:
+    """Keep the two installable halves on one release version."""
+    version = json.loads(
+        (ROOT / "custom_components/tentahacle/manifest.json").read_text()
+    )["version"]
+    makefile = PACKAGE_MAKEFILE.read_text()
+    match = re.search(r"^\$\(call PKG_INIT_BIN, ([^)]+)\)$", makefile, re.MULTILINE)
+    assert match is not None
+    assert match.group(1) == version
+    assert f"## {version} -" in (ROOT / "CHANGELOG.md").read_text()

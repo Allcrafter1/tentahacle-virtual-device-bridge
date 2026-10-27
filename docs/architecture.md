@@ -38,6 +38,17 @@ reconciliation. Native submission is not a DECT delivery acknowledgement.
 The native AHA helper runs without the MQTT worker's Freetz `LD_LIBRARY_PATH`,
 so that its loader and AVM libraries use the same runtime. Both deletion and
 widget restoration use this environment and a bounded child-process deadline.
+Delete/resync helpers may be cancelled during shutdown. A running
+`modsave flash` is deliberately allowed to finish for up to 30 seconds; the
+init script consequently waits up to 40 seconds before declaring bridge stop a
+failure instead of killing a flash write midway.
+
+The service watchdog treats both halves as required. It restarts a crashed
+MQTT bridge while the provider is healthy, and it keeps retrying virtual AHA
+startup after an initial provider failure instead of accepting a permanently
+running stock `aha` as recovery. Manual starts do not create duplicate watchdog
+workers. Both package logs are checked once per minute and truncated at 1 MiB
+to bound `/var`/tmpfs use during persistent authentication or provider errors.
 
 ### Home Assistant custom integration
 
@@ -55,8 +66,10 @@ actions and state attributes.
 
 MQTT carries management, FRITZ-originated commands and confirmed Home
 Assistant state. Messages are local, versioned and independent of Home
-Assistant's internal storage format. Retained configuration and state allow
-both sides to recover after restart in either order.
+Assistant's internal storage format. Retained state and a complete
+Home-Assistant-owned replay on bridge connection and once per minute allow
+both sides to recover after restart, a rejected registry write or temporary
+provider failure in either startup order.
 
 ## Native source layout and ownership
 
@@ -121,9 +134,12 @@ SEQPACKET replies or EOF before a reply. Provider control sockets close on exec;
 missing native function symbols leave the provider inactive. The MQTT process
 checks authentication/will/loop startup errors and validates WATCH acceptance.
 Native deletion and flash persistence have monotonic four- and thirty-second
-child-process deadlines. The cache tests cover every supported profile/property
-combination and prove that deletion compaction keeps feedback attached to its
-original UID.
+child-process deadlines. Shutdown aborts direct native helpers but never kills
+an in-progress flash persistence child. The cache tests cover every supported
+profile/property combination and prove that deletion compaction keeps feedback
+attached to its original UID. Hue/saturation feedback uses bounded decimal
+parsing rather than `scanf`, including exact-tail and overflow checks for MQTT
+input.
 
 ### Compiler and loader assumptions
 
@@ -185,7 +201,14 @@ capabilities and widget layouts are type-specific.
 Removing a mapping is authoritative: the bridge calls the local native AHA
 deletion path, removes the provider endpoint and then removes the persistent
 registry entry. Existing controller assignments for that virtual device are
-therefore removed with it. Provider IDs are never reused.
+therefore removed with it. Provider IDs are never reused. The virtual native
+parent reports `IsDeleteSupported=0`, so FRITZ!OS cannot independently remove
+HA-owned endpoints. Removing the whole HA bridge entry first restores any
+active thermostat override and then publishes an empty authoritative device
+set. If that best-effort cleanup cannot reach a source entity or MQTT, Home
+Assistant logs the removal error and preserves the private recovery store;
+the user may still need to restore the affected thermostat or remove stale
+native endpoints manually.
 
 ## Management protocol
 
@@ -205,6 +228,12 @@ Management JSON is validated and persisted by the separate MQTT process. The
 provider inside `aha` receives only a bounded, validated local snapshot and
 never parses MQTT credentials or writes persistent files.
 
+Home Assistant sends prune-before-upsert and a final prune on every complete
+replay. The same complete mapping, confirmed-state, schedule and timer snapshot
+is repeated once per minute. This makes registry-save failures, provider-pending
+upserts and stale retained timer feedback self-healing without duplicating
+devices; unchanged operations are idempotent and do not rewrite the registry.
+
 Provider restoration carries each persistent remote ID explicitly. Replaying
 only device names in insertion order is insufficient after deletions: the
 durable allocator retains gaps while an empty provider starts at 456.
@@ -220,17 +249,35 @@ The exact version-1 messages, validation rules and recovery semantics are in
 
 ## Supported profiles
 
-The first usable release targets:
+The release-candidate profiles are:
 
 | HA source | Virtual FRITZ profile | Functions |
 |---|---|---|
 | `switch`, `input_boolean` | switch/socket | on/off |
-| `light` | dimmable or color-temperature light | on/off, brightness, optional color temperature |
-| `cover` | blind | open, close, stop, position |
-| `climate` | radiator thermostat | mode, setpoint, Boost/cold timer, optional schedule shadow |
+| `light` | dimmable or color light | on/off, brightness, Kelvin when supported, Hue/Saturation for `hs`, `xy`, `rgb`, `rgbw` and `rgbww` sources |
+| `cover` | blind | open/close directly or through endpoint positions; optional stop and intermediate position according to HA capabilities |
+| `climate` | radiator thermostat | heat/off, 8–28 °C setpoint, native MAX, current temperature, Boost/cold timer and optional schedule shadow |
 
-Free HS color remains an experimental capability until the 440 palette and
-arbitrary Home Assistant color gamuts have a predictable mapping.
+Full color uses the existing color-light profile. The integration derives a
+persistent `color_full` capability from the HA source; FRITZ commands and
+confirmed state use Hue 0–359 and saturation 0–255. Switching between Kelvin
+and HS clears the inactive retained value so reconnect cannot replay an old
+color mode. The roundtrip and mode changes are automated; final physical 440
+qualification with several colors remains in the release checklist.
+
+A cover is accepted only if it can implement both endpoints through OPEN/CLOSE
+or numeric SET_POSITION. STOP and intermediate positions remain optional.
+Binary covers confirm only 0/100 and intentionally do not invent an endpoint
+while HA reports `opening` or `closing`.
+
+Climate sources must support target temperature, heat and off, a range covering
+8–28 °C and steps that can represent every half degree. HA-configured Celsius
+or Fahrenheit is converted at the integration boundary. FRITZ MAX maps to the
+source entity's `max_temp`; values between 28 °C and MAX have no ordinary
+FRITZ representation and therefore leave the last representable retained
+setpoint until the source returns to 8–28 °C or exact MAX. Current temperature
+is sent in tenths of a degree, or as unknown when HA has no valid value. The
+native battery display is synthetic healthy/100 %, not source telemetry.
 
 The thermostat schedule adapter is optional. The first adapter supports the
 validated Zigbee2MQTT `5+2` workday/holiday schedule entities. The internal
@@ -249,7 +296,15 @@ Boost and cold overrides are kept in a private atomic Home Assistant store.
 The first override records the previous temperature, HVAC mode and preset.
 Extending or switching the override retains that original state. Expiry,
 manual cancellation and a Home Assistant restart restore it without visible
-input helpers.
+input helpers. A later explicit source change cancels the override so expiry
+cannot overwrite that change. Temporary missing/unavailable source state keeps
+the snapshot. Deleting or rebinding a mapping restores the old source first;
+whole-entry removal performs the same cleanup before pruning native endpoints.
+
+FRITZ!OS thermostat editor fields outside this contract are not mirrored:
+comfort/reduced configuration, offset, locks, external sensor selection,
+adaptive heating, holiday/summer and window settings remain unsupported and
+must not be edited on a virtual thermostat.
 
 ## User workflow
 
@@ -263,7 +318,9 @@ input helpers.
 4. Choose a FRITZ device name. The immutable endpoint is created and confirmed
    by the bridge.
 5. Follow the final wizard page's direct FRITZ!OS link and place or configure
-   the device there. The persistent completion notification and the bridge
+   the device there. The safe base URL is extended with `/?lp=sh_dev` so the
+   link opens Smart Home directly, including configured port/proxy paths. The
+   persistent completion notification and the bridge
    device named **Open the FRITZ!OS interface** remain permanent alternatives.
    Screen layout and its short display label remain FRITZ!OS responsibilities.
 6. Reconfigure a mapping to bind a replacement HA entity while retaining the
@@ -272,6 +329,27 @@ input helpers.
 When a mapped thermostat has no recognized schedule adapter, setpoint, mode,
 Boost and cold continue to work; only the native next-change schedule display
 stays disabled.
+
+Home Assistant owns virtual-device creation, renaming, rebinding and deletion,
+with a hard limit of 32 devices per bridge. FRITZ!OS remains the editor for 440
+screen placement and for native templates, scenarios and routines. Those
+native automation features are intentionally not recreated in the bridge.
+
+## Known FRITZ!OS and 440 presentation limits
+
+- A virtual blind's parent can be shown with an LED/lamp-style icon and
+  FRITZ!OS can warn that end positions are not calibrated. The provider exposes
+  the verified blind unit/interfaces; it does not fabricate undocumented
+  calibration state merely to hide cosmetic warnings.
+- An already open 440 page does not always refresh immediately after an
+  external state change. The same behavior was reproduced with an original
+  FRITZ!Thermo. Reopening the page must show the confirmed current state.
+- Virtual devices can already be selected and saved in native templates and
+  scenarios. Runtime activation per profile and one harmless routine remain
+  physical release-qualification items. Cover availability as a routine trigger
+  is governed by FRITZ!OS rather than the bridge.
+- Long-press gestures are not exposed by the tested 440/FRITZ!OS assignment
+  model. The project does not modify controller firmware to add them.
 
 ## Latency topology
 
@@ -409,7 +487,8 @@ Three additional defects were reproduced against the preceding audit state:
   Tests execute actual start/stop methods and verify subscription/timer cleanup.
 
 Negative controls failed before each fix; valid neighboring cases passed.
-The combined state passes 96 Python/Lua tests, Ruff, the C sanitizer suite with
+At that audit checkpoint, the combined state passed 96 Python/Lua tests, Ruff,
+the C sanitizer suite with
 30,000 malformed-input cases, and the ARM MQTT bridge build. No live deployment
 was performed. Home Assistant dependencies are mocked in lifecycle tests.
 
@@ -442,7 +521,8 @@ against the preceding implementation and passing valid neighboring cases:
   This is a reproducible lifecycle defect, not proof that it caused a particular
   observed 440 disappearance; that still requires live correlation.
 
-The combined state passes 134 Python/Lua tests, Ruff and shell syntax checks.
+At that audit checkpoint, the combined state passed 134 Python/Lua tests, Ruff
+and shell syntax checks.
 The C suite passes ASan/UBSan/LeakSanitizer with 180,000 deterministic malformed
 cases (30,000 parser, 100,000 actual binary dispatcher and 50,000 actual control
 parser cases). The ordinary C suite, GCC static analysis and ARM provider/MQTT
@@ -452,3 +532,42 @@ validation, timer/reconciliation locking, transport and catalog lifecycle found
 no additional confirmed defect in those paths. This is finite test coverage, not
 proof of absence of bugs. HA lifecycle dependencies are mocked; no live deployment
 or physical 440 verification was performed during these audit rounds.
+
+### 2026-10-27 release-candidate completion pass
+
+The bounded completion pass concentrated on confirmed functional gaps and the
+failure modes that matter on a dedicated long-running bridge:
+
+- Light feedback now preserves value commands received with an off relay,
+  supports a complete Kelvin/HS roundtrip and clears the inactive retained
+  color mode. Cover translation follows each HA entity's advertised endpoint,
+  position and stop capabilities; incompatible read-only/tilt-only sources are
+  rejected before creation.
+- Thermostat feedback now includes current temperature, exact MAX semantics,
+  HA Celsius/Fahrenheit conversion and explicit clearing of stale schedules.
+  External changes cancel active overrides, and deletion/rebinding/hub removal
+  restores saved source state instead of leaving a real thermostat at MAX/OFF.
+- The native capacity of 32 devices is enforced in HA. Prune-before-upsert
+  permits replacement at full capacity, and the complete desired devices,
+  confirmed values and timer state are replayed on reconnect and once per
+  minute.
+- The watchdog now supervises the MQTT process as well as the provider and
+  remains alive after an initial virtual-provider startup failure. Package logs
+  are bounded. Shutdown cancels native helpers promptly but gives `modsave` its
+  full bounded completion window.
+- MQTT Hue/Saturation input no longer relies on overflowing `scanf` numeric
+  conversions. The complete native suite passes strict warnings plus
+  ASan/UBSan/LeakSanitizer, including the binary/control fuzz loops and all
+  dynamic/legacy provider self-tests. No further confirmed memory-corruption,
+  invalid-pointer, data-race or code-execution defect was found in the bounded
+  review.
+
+This is the code-complete candidate, not a claim that undocumented FRITZ radio
+and UI behavior can be proven offline. The remaining physical gates and exact
+expected observations are kept in the
+[release validation checklist](release-validation.md).
+
+For this release-candidate snapshot, 257 repository tests pass; the optional
+Lua 5.1 resync test skips only on hosts without that interpreter and is run in
+CI. Ruff, shell/JSON validation, the complete native sanitizer/fuzz suite and
+the ARM/Freetz 7530 image build also pass.

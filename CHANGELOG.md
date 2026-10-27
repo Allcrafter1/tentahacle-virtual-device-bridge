@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.0-rc.1 - 2026-10-27
+
+- Complete the existing light profiles with reliable brightness and color-
+  temperature feedback plus Hue/Saturation round trips for compatible Home
+  Assistant color lights.
+- Make cover commands follow each source entity's actual open, close, stop and
+  positioning capabilities, including truthful binary-cover feedback.
+- Complete thermostat feedback for current temperature, OFF and MAX, support
+  Celsius and Fahrenheit sources, harden Boost/cold persistence and cancellation,
+  and prevent deletion or rebinding from leaving a real thermostat at MAX/OFF.
+- Enforce the native 32-device capacity, retry the complete authoritative Home
+  Assistant snapshot every minute and attempt native-device cleanup when their
+  Home Assistant hub is removed, retaining recovery state if cleanup cannot
+  reach MQTT or a source entity.
+- Add direct Smart Home configuration links and reject source entities that
+  cannot implement the selected persistent profile.
+- Supervise both the virtual AHA provider and MQTT bridge, retain autonomous
+  recovery after failed startup, bound runtime logs and make shutdown safe
+  around flash persistence.
+- Replace overflow-prone native HS parsing with bounded decimal parsing and
+  extend lifecycle, fault-injection, sanitizer and parser regression coverage.
+
+This is a release candidate for the existing FRITZ!Box 7530 / FRITZ!OS 8.25
+compatibility tuple. The host suites and bounded security/recovery audit pass.
+The focused physical-controller checklist in `docs/release-validation.md` must
+still pass on the laboratory box before the final `0.3.0` release and broad
+multi-controller deployment. Update both the Home Assistant integration and
+the Freetz package together.
+
 ## 0.2.0-beta.1 - 2026-10-25
 
 - Rename the project and every public or technical identifier to

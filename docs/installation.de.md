@@ -14,14 +14,14 @@ Nach der einmaligen Firmware-Vorbereitung sind für die normale Einrichtung und
 Nutzung weder SSH noch Terminalbefehle oder manuelle Konfigurationsdateien
 erforderlich.
 
-> [!WARNING]
-> Version 0.2.0-beta.1 ist ein klarer Neustart gegenüber den früheren
-> 0.1.x-Testständen. Sie verwendet bewusst neue Kennungen für Home Assistant,
-> MQTT, Freetz, Dateipfade und virtuelle Geräte. Eine automatische Migration
-> gibt es nicht: Entferne die alte Test-Integration und das alte Bridge-Paket,
-> installiere diese Beta frisch und lege virtuelle Geräte samt Zuweisungen neu
-> an. Sichere die Box vorher, falls du den bisherigen Laborstand behalten
-> möchtest.
+> [!IMPORTANT]
+> Version 0.3.0-rc.1 aktualisiert 0.2.0-beta.1 direkt: Aktualisiere die
+> Home-Assistant-Integration und das Freetz-Paket gemeinsam; vorhandene
+> virtuelle Identitäten und Controller-Zuweisungen bleiben erhalten. Nur beim
+> direkten Wechsel von einem früheren 0.1.x-Teststand ist eine Neuinstallation
+> nötig, weil 0.2.0-beta.1 die Kennungen für Home Assistant, MQTT, Freetz,
+> Dateipfade und virtuelle Geräte bewusst geändert hat. Sichere vor beiden
+> Updatewegen Home Assistant und die Box.
 
 Wenn dich gerade das Modifizieren der FRITZ!Box von der Nutzung abhält, eröffne
 ein [GitHub-Issue](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues).
@@ -32,7 +32,7 @@ Konfigurationsexporte, Seriennummern oder andere private Gerätedaten an.
 
 ## Unterstützter Ausgangsstand
 
-Die erste öffentliche Version unterstützt bewusst nur:
+Der aktuell unterstützte Stand umfasst bewusst nur:
 
 - klassische FRITZ!Box 7530, Hardware-Revision 236;
 - deutsche FRITZ!OS-Version 8.25;
@@ -280,7 +280,10 @@ dieselbe Bridge-ID und den Topic-Stamm `tentahacle`.
 1. Öffne **Einstellungen → Geräte & Dienste → TentAHAcle - Virtual Device Bridge**.
 2. Verwende oben rechts **Virtuelles FRITZ!-Gerät hinzufügen**.
 3. Wähle eine Home-Assistant-Entität. Das engste passende Profil wird
-   vorgeschlagen; optionale Fähigkeiten können reduziert werden.
+   vorgeschlagen; optionale Fähigkeiten können reduziert werden. Das
+   Farbprofil aktiviert Hue/Saturation automatisch für HA-Lampen mit `hs`,
+   `xy`, `rgb`, `rgbw` oder `rgbww`. Andernfalls bietet es nur
+   Farbtemperatur.
 4. Vergib den FRITZ!-Gerätenamen und bestätige.
 5. Folge auf der Abschlussseite dem Link **FRITZ!OS-Oberfläche öffnen**.
 6. Weise das virtuelle Gerät dort dem gewünschten Anzeigeplatz des 440 zu und
@@ -294,6 +297,52 @@ Gerätetyps erzeugt dagegen ein neues virtuelles Gerät.
 
 Wenn ein Mapping in Home Assistant gelöscht wird, entfernt die Integration
 auch das zugehörige virtuelle Gerät aus FRITZ!OS und aus dem Bridge-Register.
+
+Eine Bridge unterstützt höchstens **32 virtuelle Geräte**. Home Assistant ist
+für ihren Lebenszyklus zuständig: Anlegen, Umbenennen, Neubinden und Löschen
+erfolgen dort. Das virtuelle Elterngerät meldet sich in FRITZ!OS absichtlich als
+nicht löschbar, damit beide Seiten nicht auseinanderlaufen. Beim Entfernen des
+gesamten Home-Assistant-Bridge-Eintrags versucht die Integration außerdem,
+aktive Thermostat-Overrides wiederherzustellen und das native Register zu
+leeren. Entferne ihn nur, während Quellentitäten und MQTT-Broker erreichbar
+sind. Schlägt die Bereinigung fehl, protokolliert Home Assistant den Fehler und
+behält den privaten Wiederherstellungsstand; ein betroffenes Thermostat oder
+ein verwaister nativer Endpunkt kann dann manuelle Bereinigung erfordern.
+
+FRITZ!OS bleibt der vorgesehene Ort, um ein virtuelles Gerät einem oder mehreren
+440 zuzuweisen, Anzeigeplatz und Displaynamen festzulegen und es in nativen
+Vorlagen, Szenarien und Routinen zu verwenden. Diese nativen
+Automationsfunktionen baut die Bridge nicht nach.
+
+## Profilverhalten und aktuelle Grenzen
+
+- **Schalter/Steckdose:** `switch`, `input_boolean` und auf Ein/Aus reduzierte
+  Lampen übertragen Befehl und bestätigten Zustand in beide Richtungen.
+- **Lampen:** Dimmbare Lampen ergänzen Helligkeit. Das Farbprofil ergänzt
+  Farbtemperatur soweit unterstützt sowie Hue/Saturation für die HA-Farbmodi
+  `hs`, `xy`, `rgb`, `rgbw` und `rgbww`.
+- **Rollläden:** Jede auswählbare Quelle muss Öffnen und Schließen direkt oder
+  über eine numerische Position unterstützen. Zwischenpositionen benötigen
+  `SET_POSITION`, Stoppen benötigt `STOP`. Ein binärer Rollladen meldet
+  bestätigte Endpunkte 0/100, aber während der Fahrt keine erfundene Position.
+- **Thermostate:** Übertragen werden Solltemperatur von 8–28 °C, Heizen/Aus,
+  der exakte MAX-Wert der Quelle, Isttemperatur, Wärme-/Kalt-Timer und optional
+  die Zeitplananzeige. HA-Konfigurationen in Celsius und Fahrenheit werden
+  umgerechnet. Ein Quellenwert über 28 °C, der nicht genau MAX ist, besitzt
+  keine native FRITZ-Darstellung.
+
+Das Elterngerät eines virtuellen Rollladens kann in FRITZ!OS kosmetisch als
+Licht/LED erscheinen. FRITZ!OS kann außerdem vor nicht kalibrierten Endlagen
+warnen; die Bridge erfindet keine Kalibrierungsdaten für nicht vorhandene
+Hardware. Eine bereits geöffnete 440-Seite aktualisiert sich ebenfalls nicht
+immer sofort. Öffne sie erneut, um den letzten bestätigten Zustand zu sehen.
+Dieses Anzeigeverhalten wurde auch mit einem originalen Thermostat reproduziert.
+
+Die genannten Befehls- und Zustandswege sind automatisiert abgedeckt. Vor einem
+breiten Einsatz benötigt der aktuelle Release-Kandidat noch gezielte
+Hardwaretests für wiederholtes Warm/Kalt und mehrere Farben, binäre und
+positionierbare Rollläden, das vollständige Thermostat-Timer-/Neustartverhalten
+sowie je eine harmlose native Vorlage, ein Szenario und eine Routine.
 
 ## FRITZ!Smart Control 440 direkt mit der Bridge verbinden
 
@@ -336,8 +385,15 @@ und nächste Änderung nur für die native Anzeige auf dem 440.
 Bearbeite den Zeitplan des virtuellen Thermostats nicht in FRITZ!OS oder der
 FRITZ!App. Die Bridge verwirft diese Änderung und stellt die Schattenkopie aus
 Home Assistant wieder her. Thermostate ohne passenden Zeitplanadapter behalten
-Solltemperatur, Modus sowie Wärme- und Kalt-Timer; nur die Anzeige der nächsten
-Änderung fehlt.
+Solltemperatur, Heizen/Aus, MAX, Isttemperatur sowie Wärme- und Kalt-Timer; nur
+die Anzeige der nächsten Änderung fehlt.
+
+Home Assistant bleibt für das virtuelle Thermostat maßgeblich. Bearbeite auch
+andere Thermostat-Konfigurationen nicht in FRITZ!OS oder der FRITZ!App.
+Komfort-/Absenktemperatur, Offset, Sperren, externe Sensorwahl, adaptive
+Heizung, Urlaub/Sommer, Fensterfunktion und ähnliche Thermo-Felder sind keine
+Bridge-Funktionen. Der angezeigte Batteriestand ist synthetisch immer
+gesund/100 %, da der virtuelle Endpunkt keine Batterie besitzt.
 
 ## Bridge sichern
 

@@ -18,9 +18,11 @@ So kann beispielsweise eine Zigbee-, Matter-, Hue- oder WLAN-Lampe, die bereits
 in Home Assistant funktioniert, auf dem 440 als FRITZ!-Lampe erscheinen. Je
 nach gewähltem Profil kannst du sie schalten, dimmen und ihre Farbtemperatur
 ändern.
+Bei einer kompatiblen Farblampe wird außerdem die Farbpalette des 440 auf die
+Home-Assistant-Lampe übertragen und die bestätigte Farbe zurückgemeldet.
 
 > [!IMPORTANT]
-> Dies ist unabhängige, experimentelle Community-Software. Die erste Version
+> Dies ist unabhängige, experimentelle Community-Software. Der aktuelle Kandidat
 > unterstützt eine genau festgelegte Kombination aus Bridge-Hardware und
 > Firmware. Verwende dafür eine separate FRITZ!Box und nicht deinen zentralen
 > Internetrouter.
@@ -76,15 +78,22 @@ Konfigurationsexporte, Seriennummern oder andere private Gerätedaten.
 | Home-Assistant-Quelle | Virtuelles FRITZ!-Gerät | Verfügbare Funktionen |
 |---|---|---|
 | `switch`, `input_boolean` | Schalter/Steckdose | Ein/Aus |
-| `light` | dimmbare Lampe oder Farbtemperaturlampe | Ein/Aus, Helligkeit, optional Farbtemperatur |
-| `cover` | Rollladen | Öffnen, Schließen, Stoppen, Position |
-| `climate` | Heizkörperthermostat | Modus, Solltemperatur, Wärme-/Kalt-Timer, optional Anzeige der nächsten Zeitplanänderung |
+| `light` | dimmbare Lampe oder Farblampe | Ein/Aus, Helligkeit, Farbtemperatur soweit unterstützt sowie Hue/Saturation für HA-Lampen mit `hs`, `xy`, `rgb`, `rgbw` oder `rgbww` |
+| `cover` | Rollladen | Öffnen/Schließen; Zwischenposition nur mit `SET_POSITION`, Stoppen nur mit `STOP` |
+| `climate` | Heizkörperthermostat | Heizen/Aus, Sollwert 8–28 °C, MAX, Isttemperatur, Wärme-/Kalt-Timer, Celsius-/Fahrenheit-Umrechnung und optional Anzeige der nächsten Zeitplanänderung |
 
 FRITZ!OS bleibt der Layout-Editor für das 440. Home Assistant verwaltet die
 Verknüpfung zwischen virtuellem FRITZ!-Gerät und echter Entität. Ein virtuelles
 Gerät kann auf mehreren Bedieneinheiten liegen. Beim Austausch einer
 Home-Assistant-Entität können FRITZ!-Identität und vorhandene 440-Zuweisungen
 erhalten bleiben.
+
+Eine Bridge unterstützt höchstens **32 virtuelle Geräte**. Anlegen, Umbenennen,
+Neubinden und Löschen erfolgen in Home Assistant; beim Löschen eines Mappings
+wird auch das native Gerät entfernt. Das virtuelle Elterngerät lässt sich in
+FRITZ!OS absichtlich nicht unabhängig löschen. FRITZ!OS bleibt für das
+Controller-Layout sowie native Vorlagen, Szenarien und Routinen zuständig; die
+Bridge baut diese Funktionen nicht in Home Assistant nach.
 
 ## Aktuelle Kompatibilität und Grenzen
 
@@ -103,22 +112,44 @@ Version untersucht und freigegeben wurde.
 Der getestete Weg über einen Mesh Master funktioniert, verursachte im Labor
 aber etwa 6-7 Sekunden Befehlsverzögerung. Für die vorgesehene Topologie wird
 das 440 direkt mit der Bridge-Box verbunden. Schalten und Dimmen wurden dort
-inzwischen in beide Richtungen geprüft. Version 0.2.0-beta.1 enthält die
-gesammelten Verbesserungen an Wiederherstellung, Katalogabgleich, Parsern und
-Lebenszyklus sowie die vollständige Umbenennung zu TentAHAcle. Diese Beta hat
-die Repository-Tests bestanden, wurde mit dem physischen Bedienteil aber noch
-nicht erneut vollständig qualifiziert. Die exakten Daten stehen unter
+inzwischen in beide Richtungen geprüft. Der aktuelle Entwicklungskandidat
+ergänzt Vollfarbe und Isttemperatur, fähigkeitsabhängige Cover-Steuerung,
+Thermostat-MAX, die Gerätebegrenzung sowie weitere Wiederherstellungs- und
+Lebenszykluskorrekturen. Diese Pfade sind automatisiert abgedeckt, aber noch
+nicht alle mit den unten genannten gezielten Hardwaretests releasequalifiziert.
+Die exakten Daten stehen unter
 [Kompatibilität](docs/compatibility.md).
+
+Bekannte Grenzen des aktuellen Kandidaten:
+
+- Binäre Rollläden melden bestätigte Endpositionen, aber während der Fahrt
+  keine erfundene Position. Nicht unterstützte Stopp- oder
+  Zwischenpositionsbefehle werden abgewiesen.
+- FRITZ!OS kann das Elterngerät des virtuellen Rollladens kosmetisch als
+  Licht/LED anzeigen und wegen der fehlenden echten Kalibrierung vor nicht
+  gesetzten Endlagen warnen.
+- Ein Thermostatwert über 28 °C ist nur darstellbar, wenn er genau dem MAX-Wert
+  der Quellentität entspricht. Andere FRITZ-Thermostateinstellungen wie
+  Sperren, Offset, Sensorwahl, adaptive Heizung oder Urlaubsmodus werden nicht
+  übertragen.
+- Eine bereits geöffnete 440-Seite aktualisiert sich mitunter nicht sofort.
+  Nach erneutem Öffnen muss der bestätigte aktuelle Zustand erscheinen; dieses
+  Verhalten wurde auch mit einem originalen Thermostat reproduziert.
+- Virtuelle Geräte lassen sich in nativen Vorlagen und Szenarien auswählen und
+  speichern. Die Laufzeitprüfung von Vorlagen, Szenarien und Routinen gehört
+  aber noch zur Release-Checkliste.
 
 ### Projektstand und Mitmachen
 
-Das Projekt ist eine funktionierende experimentelle Beta und noch kein fertiges
+Das Projekt ist funktionierende experimentelle Software und noch kein fertiges
 Produkt. Die unterstützten Profile, dauerhafte Geräteverwaltung,
 MQTT-Wiederherstellung und der direkte 440-Befehlspfad besitzen automatisierte
-Tests und wurden auf dem beschriebenen Laboraufbau praktisch geprüft. Besonders
-hilfreich sind längere Praxistests, Tests mit weiteren FRITZ!OS-Versionen und
-Geräten, bessere Home-Assistant-Diagnosen, Parser-Fuzzing und eine weitere
-Aufteilung der nativen MQTT-Bridge. Nachvollziehbare Ergebnisse bitte über
+Tests und wurden auf dem beschriebenen Laboraufbau praktisch geprüft. Vor einem
+breiten Rollout fehlen noch gezielte Hardwaretests für wiederholtes Warm/Kalt
+und mehrere Farben, binäre und positionierbare Rollläden, vollständiges
+Thermostat-Timer-/Neustartverhalten sowie je eine harmlose native Vorlage, ein
+Szenario und eine Routine. Besonders hilfreich sind längere Praxistests und
+Prüfungen auf zusätzlicher unterstützter Hardware. Nachvollziehbare Ergebnisse bitte über
 [GitHub Issues](https://github.com/Allcrafter1/tentahacle-virtual-device-bridge/issues) melden.
 
 Dieses Repository verteilt keine AVM-Firmware, keine AVM-Programme und keine
@@ -130,6 +161,7 @@ vorher die [Lizenz- und Distributionsgrenzen](docs/licensing.md).
 - [Installation, Update und Wiederherstellung](docs/installation.de.md)
 - [Architektur und Bedienablauf](docs/architecture.md)
 - [Kompatibilitätsregeln](docs/compatibility.md)
+- [Begrenzte Release-Prüfliste](docs/release-validation.md)
 - [MQTT-Protokoll Version 1](docs/mqtt-protocol.md)
 - [Produktentscheidungen](docs/decisions.md)
 - [Lizenz- und Distributionsgrenzen](docs/licensing.md)

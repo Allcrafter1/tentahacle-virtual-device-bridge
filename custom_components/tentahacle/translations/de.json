@@ -82,7 +82,7 @@
       "error": {
         "already_mapped": "Diese Home-Assistant-Entität besitzt auf dieser Bridge bereits ein virtuelles FRITZ-Gerät.",
         "incompatible_cover": "Wähle einen Rollladen, der Öffnen und Schließen direkt oder über eine numerische Position unterstützt.",
-        "incompatible_thermostat": "Wähle ein Thermostat mit Solltemperatur, den Modi Heizen und Aus, einem Bereich von mindestens 8–28 °C und kompatiblen 0,5-Grad-Schritten.",
+        "incompatible_thermostat": "Wähle ein Thermostat mit den für diese Bridge benötigten Solltemperatur-, Heizen/Aus-, Bereichs- und Schritt-Funktionen (einschließlich 8–28 °C und kompatiblen 0,5-Grad-Schritten).",
         "incompatible_profile": "Die Entität unterstützt dieses dauerhafte FRITZ-Profil nicht.",
         "invalid_name": "Der Name darf keine Leerzeichen am Anfang oder Ende und höchstens 79 UTF-8-Bytes enthalten.",
         "source_entity_missing": "Die ausgewählte Home-Assistant-Entität existiert nicht."
@@ -90,7 +90,7 @@
       "abort": {
         "source_entity_missing": "Die ausgewählte Home-Assistant-Entität existiert nicht mehr.",
         "incompatible_cover": "Der ausgewählte Rollladen kann die FRITZ-Befehle Öffnen und Schließen nicht beide umsetzen.",
-        "incompatible_thermostat": "Das ausgewählte Thermostat kann nicht alle FRITZ-Thermostatbefehle umsetzen.",
+        "incompatible_thermostat": "Das ausgewählte Thermostat kann die von dieser Bridge benötigten Thermostatbefehle nicht umsetzen.",
         "device_limit_reached": "Diese Bridge besitzt bereits die maximal möglichen 32 virtuellen Geräte."
       }
     }
@@ -100,7 +100,7 @@
       "options": {
         "switch": "Schalter/Steckdose",
         "dimmable_light": "Dimmbares Licht",
-        "color_temperature_light": "Farbtemperatur-Licht",
+        "color_temperature_light": "Farb-/Farbtemperaturlampe",
         "cover": "Rollladen",
         "thermostat": "Heizkörperthermostat"
       }

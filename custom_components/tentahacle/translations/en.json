@@ -82,7 +82,7 @@
       "error": {
         "already_mapped": "This Home Assistant entity already has a virtual FRITZ device on this bridge.",
         "incompatible_cover": "Choose a cover that supports both opening and closing, either directly or through numeric positioning.",
-        "incompatible_thermostat": "Choose a thermostat with target-temperature support, heat and off modes, a range covering 8–28 °C, and half-degree-compatible steps.",
+        "incompatible_thermostat": "Choose a thermostat that provides the target-temperature, heat/off, range and step controls required by this bridge (including 8–28 °C and half-degree-compatible steps).",
         "incompatible_profile": "The entity does not support this persistent FRITZ profile.",
         "invalid_name": "Enter a name without leading or trailing spaces and containing at most 79 UTF-8 bytes.",
         "source_entity_missing": "The selected Home Assistant entity does not exist."
@@ -90,7 +90,7 @@
       "abort": {
         "source_entity_missing": "The selected Home Assistant entity no longer exists.",
         "incompatible_cover": "The selected cover cannot implement both FRITZ open and close controls.",
-        "incompatible_thermostat": "The selected thermostat cannot implement all FRITZ thermostat controls.",
+        "incompatible_thermostat": "The selected thermostat cannot implement the thermostat controls required by this bridge.",
         "device_limit_reached": "This bridge already has the maximum of 32 virtual devices."
       }
     }
@@ -100,7 +100,7 @@
       "options": {
         "switch": "Switch/socket",
         "dimmable_light": "Dimmable light",
-        "color_temperature_light": "Color-temperature light",
+        "color_temperature_light": "Color / color-temperature light",
         "cover": "Blind/cover",
         "thermostat": "Radiator thermostat"
       }
