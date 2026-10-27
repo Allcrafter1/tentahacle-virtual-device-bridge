@@ -51,7 +51,7 @@ other six controllers.
 |---|---|---|---|
 | Switch/socket | `switch`, `input_boolean`, reduced on/off `light`; commands and external feedback | Toggle from 440 and HA, then reopen the 440 page | Both directions agree after every action |
 | Dimming | Scaling, off-with-value command, retained replay | Repeated slow and fast up/down; off then set a value; HA restart | Requested final percentage reaches HA and reopening shows it |
-| Kelvin/full color | Kelvin and HS roundtrip, exact-palette normalization, mode switch and stale retained-mode clearing | Use short presses through all nine Kelvin values and both endpoints; HA -> 440; Kelvin <-> color; provider reconnect | Correct source mode/value each time; non-exact source feedback returns as the nearest native value; no old color returns after reconnect. FRITZ!OS's native endpoint wrap is recorded separately, not confused with an invalid-value reset |
+| Kelvin/full color | Kelvin and HS roundtrip, exact-palette normalization, mode switch and stale retained-mode clearing | Use short presses through all nine Kelvin values and both endpoints; HA -> 440; Kelvin <-> color; provider reconnect | Correct source mode/value each time; non-exact source feedback returns as the nearest native value; no old color returns after reconnect. At either endpoint a further press holds the value and creates no HA/MQTT command |
 | Binary cover | Open/close, 0/100 feedback, no invented moving endpoint | Cover without `current_position`; open/close and observe `opening`/`closing` | Commands work; page shows confirmed endpoint after completion |
 | Position cover | Set position, endpoint fallback, capability rejection, optional stop | 25/50/75 %, stop during travel, external HA position change | HA and reopened 440 page agree; unsupported actions are not offered/forwarded |
 | Thermostat basics | Compatible-source filter, 8–28 °C, heat/off, MAX, current temperature, C/F | Ordinary +/- including OFF/MAX; change measured temperature externally | Correct HA service/value and correct state after reopening the page |
@@ -96,9 +96,10 @@ remaining six 440s.
 - Binary covers do not report invented intermediate positions. Stop and numeric
   positions require the corresponding HA capabilities.
 - FRITZ!OS 8.25 natively wraps the nine-step color-temperature selector from
-  6500 back to 2700 K and from 2700 to 6500 K. This is separate from the fixed
-  invalid-feedback reset. A non-wrapping product policy would require an
-  explicit, separately reviewed behavior change rather than a protocol bug fix.
+  6500 back to 2700 K and from 2700 to 6500 K. The bridge deliberately differs:
+  for dynamic virtual lights it consumes either endpoint-wrap attempt, echoes
+  the unchanged endpoint immediately and emits no HA/MQTT command. Physical
+  and other native devices retain their stock behavior.
 - A source light with no real `color_temp` mode may emulate Kelvin as chromatic
   color, and a source range that contains none of the nine native presets has
   no fully faithful 440 representation.

@@ -129,6 +129,11 @@ the documented Kelvin range but normalizes it at the Provider boundary to the
 nearest native AHA step: 2700, 3000, 3400, 3800, 4200, 4700, 5300, 5900 or
 6500 K. An exact midpoint selects the lower Kelvin value. Consequently, cached
 and replayed Provider feedback always contains a native palette value.
+When a FRITZ!OS control attempts to wrap a dynamic virtual light directly from
+2700 to 6500 K or from 6500 to 2700 K, the Provider deliberately keeps and
+re-emits the existing endpoint without publishing a command event. This bounded
+scale is an intentional non-native product policy; it does not alter physical
+or other native devices.
 The bridge caches the newest valid values while the provider is unavailable
 and replays them after device announcement and HAN-FUN unit provisioning.
 Home Assistant converts a Fahrenheit-configured source to these Celsius wire

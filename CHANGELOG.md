@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Keep dynamic virtual color-temperature lights at an exact 2700 or 6500 K
+  endpoint when FRITZ!OS requests its native endpoint wrap. The Provider
+  immediately re-emits the unchanged value and intentionally sends no command
+  to Home Assistant; native and compatibility-only devices retain stock
+  behavior.
 - Normalize physical color-temperature feedback such as 2702, 3003, 4716 or
   6535 K onto the nine exact presets recognized by FRITZ!OS 8.25. Enforce the
   same invariant again at the native MQTT boundary so stale retained data and

@@ -40,6 +40,23 @@ static void hs_frame(unsigned char packet[52], unsigned remote_id) {
     packet[44] = 1;
 }
 
+static void temperature_frame(unsigned char packet[46], unsigned remote_id,
+                              unsigned temperature) {
+    memset(packet, 0, 46);
+    packet[0] = 7;
+    packet[1] = 3;
+    write_be16(packet + 2, 46);
+    write_be16(packet + 8, remote_id);
+    write_be32(packet + 12, 30);
+    write_be32(packet + 16, 118);
+    write_be16(packet + 20, 22);
+    write_be16(packet + 24, 1);
+    write_be32(packet + 28, 108);
+    write_be16(packet + 32, 10);
+    write_be32(packet + 36, 2);
+    write_be16(packet + 40, temperature);
+}
+
 int main(void) {
     const char *uid = "TVB0123456789ABCDEF";
     char command[256];
@@ -83,6 +100,51 @@ int main(void) {
     assert(dynamic_control(command, sizeof(command)) == 1);
     assert(!registry.devices[0].color_full);
     assert(device_values[0].color_mode == 2 && !device_values[0].color_is_unmapped);
+
+    /* Dynamic virtual lights deliberately clamp at both exact palette
+     * endpoints. The current value is echoed immediately and no command is
+     * queued for Home Assistant. */
+    unsigned char temperature[46];
+    unsigned sequence = command_count;
+    encoder.fd = 1;
+    captured_size = 0;
+    temperature_frame(temperature, device->remote_id, 6500);
+    assert(send_frame(incoming_fd, temperature, sizeof(temperature), 0) ==
+           (ssize_t)sizeof(temperature));
+    assert(device_values[0].color_temperature == 2700);
+    assert(command_count == sequence && !provider_event_pop(&event_queue, &event));
+    assert(captured_size == 46 && read_be32(captured + 28) == 108 &&
+           read_be16(captured + 40) == 2700);
+
+    device_values[0].color_temperature = 6500;
+    captured_size = 0;
+    temperature_frame(temperature, device->remote_id, 2700);
+    assert(send_frame(incoming_fd, temperature, sizeof(temperature), 0) ==
+           (ssize_t)sizeof(temperature));
+    assert(device_values[0].color_temperature == 6500);
+    assert(command_count == sequence && !provider_event_pop(&event_queue, &event));
+    assert(captured_size == 46 && read_be16(captured + 40) == 6500);
+
+    /* Neighboring values still take the ordinary command path. */
+    temperature_frame(temperature, device->remote_id, 5900);
+    assert(send_frame(incoming_fd, temperature, sizeof(temperature), 0) ==
+           (ssize_t)sizeof(temperature));
+    assert(device_values[0].color_temperature == 5900 && command_count == sequence + 1);
+    assert(provider_event_pop(&event_queue, &event));
+    assert(event.has_color && event.color_mode == 2 && event.color_temperature == 5900);
+    assert(!provider_event_pop(&event_queue, &event));
+
+    /* The compatibility-only fixed endpoint keeps its previous cyclic
+     * behavior; the policy applies only to registry-backed dynamic devices. */
+    legacy_enabled = 1;
+    legacy_state.color_mode = 2;
+    legacy_state.color_temperature = 6500;
+    temperature_frame(temperature, 453, 2700);
+    assert(send_frame(incoming_fd, temperature, sizeof(temperature), 0) ==
+           (ssize_t)sizeof(temperature));
+    assert(legacy_state.color_temperature == 2700 && command_count == sequence + 2);
+    assert(provider_event_pop(&event_queue, &event));
+    assert(event.has_color && event.color_temperature == 2700);
 
     puts("provider_color_test: OK");
     return 0;

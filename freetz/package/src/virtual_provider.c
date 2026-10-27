@@ -154,6 +154,20 @@ static unsigned profile_remote(tvb_device_profile p) {
     return ids[p];
 }
 
+/* Stock FRITZ!OS cycles from one end of its Kelvin palette to the other.
+ * Dynamic virtual lights deliberately behave like a bounded scale instead:
+ * another press at an exact endpoint keeps that endpoint.  This is product
+ * policy, not protocol validation, and therefore must never affect legacy or
+ * genuinely native devices passing through the provider. */
+static int suppress_dynamic_color_temperature_wrap(const tvb_device *dynamic,
+                                                    unsigned current_mode,
+                                                    unsigned current_temperature,
+                                                    unsigned requested_temperature) {
+    return dynamic && current_mode == 2 &&
+        ((current_temperature == 2700 && requested_temperature == 6500) ||
+         (current_temperature == 6500 && requested_temperature == 2700));
+}
+
 static void provider_debug(const char *format, ...) {
     if (!debug_enabled) return;
     struct timespec now = {0};
@@ -789,8 +803,20 @@ static ssize_t send_frame(int fd, const void*buf, size_t n, int flags) {
             if (remote_id == 453 && n == 36+inner_length && inner_function == 108 && inner_length >= 4) {
                 unsigned mode = read_be32(p+36);
                 if (mode == 2 && inner_length == 10 && read_be16(p+40) >= 1000 && read_be16(p+40) <= 10000) {
+                    unsigned requested_temperature = read_be16(p+40);
+                    if (suppress_dynamic_color_temperature_wrap(dynamic,
+                        encoder.state->color_mode, encoder.state->color_temperature,
+                        requested_temperature)) {
+                        DEBUG("provider: suppressed virtual color-temperature endpoint wrap "
+                              "uid=%s kelvin=%u requested=%u\n",
+                            selected_device->uid, encoder.state->color_temperature,
+                            requested_temperature);
+                        (void) emit_color_value(&encoder);
+                        provider_unlock();
+                        return n;
+                    }
                     encoder.state->color_mode = 2;
-                    encoder.state->color_temperature = read_be16(p+40);
+                    encoder.state->color_temperature = requested_temperature;
                     encoder.state->color_is_unmapped = 0;
                 }
                 else if ((!dynamic || dynamic->color_full) && mode == 0 && inner_length == 16 && read_be16(p+40) < 360) {

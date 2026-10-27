@@ -220,6 +220,29 @@ static int dynamic_test(void){
  CHECK(send(s[1],sw,sizeof(sw),0)==sizeof(sw));CHECK(frame(s[1],p,456,15));
  n=recv(watch,event,sizeof(event)-1,0);CHECK(n>0);event[n]=0;CHECK(strstr(event,"TVB0000000000000001"));
  unsigned char ct[46]={7,3,0,46,0,0,0,3,1,203,0,0,0,0,0,30,0,0,0,118,0,22,0,0,0,1,0,0,0,0,0,108,0,10,0,0,0,0,0,2,0x0f,0xa0,0,0,0,0};
+ if(!golden_file){
+  /* Unlike stock FRITZ!OS, dynamic virtual lights hold the exact Kelvin
+   * endpoint. Both attempted wraps must echo the old value without a WATCH
+   * event, while an ordinary neighboring step must still be delivered. */
+  CHECK(expect_control(path,"COLOR_TEMP TVB0000000000000004 6500",1));
+  CHECK(frame(s[1],p,459,118)&&u16(p+40)==6500);
+  ct[40]=0x0a;ct[41]=0x8c; /* Native 6500 -> 2700 wrap attempt. */
+  CHECK(send(s[1],ct,sizeof(ct),0)==sizeof(ct));
+  CHECK(frame(s[1],p,459,118)&&u16(p+40)==6500);
+  wait.fd=watch;CHECK(poll(&wait,1,50)==0);
+  CHECK(expect_control(path,"COLOR_TEMP TVB0000000000000004 2700",1));
+  CHECK(frame(s[1],p,459,118)&&u16(p+40)==2700);
+  ct[40]=0x19;ct[41]=0x64; /* Native 2700 -> 6500 wrap attempt. */
+  CHECK(send(s[1],ct,sizeof(ct),0)==sizeof(ct));
+  CHECK(frame(s[1],p,459,118)&&u16(p+40)==2700);
+  CHECK(poll(&wait,1,50)==0);
+  ct[40]=0x0b;ct[41]=0xb8; /* A normal 2700 -> 3000 step. */
+  CHECK(send(s[1],ct,sizeof(ct),0)==sizeof(ct));
+  CHECK(frame(s[1],p,459,118)&&u16(p+40)==3000);
+  n=recv(watch,event,sizeof(event)-1,0);CHECK(n>0);event[n]=0;
+  CHECK(strstr(event,"TVB0000000000000004")&&strstr(event,"\"color_temperature\":3000"));
+ }
+ ct[40]=0x0f;ct[41]=0xa0;
  CHECK(send(s[1],ct,sizeof(ct),0)==sizeof(ct));CHECK(frame(s[1],p,459,118));
  n=recv(watch,event,sizeof(event)-1,0);CHECK(n>0);event[n]=0;CHECK(strstr(event,"TVB0000000000000004"));
  command[9]=204;command[31]=125;memset(command+36,0,8);command[39]=14;

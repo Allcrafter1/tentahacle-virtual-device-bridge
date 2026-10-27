@@ -113,10 +113,13 @@ See [Compatibility](docs/compatibility.md) for the exact baseline.
 Known boundaries of the current candidate:
 
 - the color-temperature page has exactly nine native Kelvin presets. Short
-  presses traverse them; FRITZ!OS 8.25 natively wraps from either endpoint to
-  the other. Lights without a real `color_temp` mode can only emulate Kelvin
-  through color in Home Assistant, and a light range containing none of the
-  nine presets cannot be represented faithfully;
+  presses traverse them. Although FRITZ!OS 8.25 normally wraps from either
+  endpoint to the other, the bridge deliberately holds dynamic virtual lights
+  at 2700 or 6500 K and sends no Home Assistant command for that attempted
+  wrap. This non-native product behavior does not alter physical or other
+  native devices. Lights without a real `color_temp` mode can only emulate
+  Kelvin through color in Home Assistant, and a light range containing none
+  of the nine presets cannot be represented faithfully;
 - binary covers report confirmed end positions but do not invent a position
   while moving; unsupported stop or intermediate-position commands are rejected;
 - FRITZ!OS can show the virtual blind's parent as a light/LED and can warn about
